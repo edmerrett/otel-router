@@ -24,6 +24,9 @@ extensions:
   # Rejects any inbound request without the expected bearer token.
   bearertokenauth/inbound:
     token: ${env:INBOUND_TOKEN}
+  # Liveness endpoint for orchestrators / the Docker HEALTHCHECK.
+  health_check:
+    endpoint: 0.0.0.0:13133
 
 receivers:
   otlp:
@@ -67,7 +70,7 @@ exporters:
       enabled: true
 
 service:
-  extensions: [bearertokenauth/inbound]
+  extensions: [bearertokenauth/inbound, health_check]
   # Per-destination signal selection: a destination receives a signal only if
   # its exporter is listed in that signal's pipeline. The webhook feed takes
   # logs only; add otlphttp/siem to other pipelines if that ever changes.

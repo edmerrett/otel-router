@@ -7,10 +7,13 @@
 #
 # Usage: demo/send-sample.sh [endpoint] [token]
 #   endpoint  router OTLP/HTTP base URL (default http://localhost:4318)
-#   token     inbound bearer token      (default demo-inbound-token)
+#   token     inbound bearer token. Precedence: arg 2, then $INBOUND_TOKEN,
+#             then the demo default. Prefer the env var for real tokens so
+#             they don't land in your shell history or `ps` output:
+#               INBOUND_TOKEN=... demo/send-sample.sh https://router.example.com
 set -u
 ENDPOINT="${1:-http://localhost:4318}"
-TOKEN="${2:-demo-inbound-token}"
+TOKEN="${2:-${INBOUND_TOKEN:-demo-inbound-token}}"
 MARKER="sample_$(date +%s)"
 NOW="$(date +%s)000000000"
 RES='{"attributes":[{"key":"service.name","value":{"stringValue":"sample-sender"}}]}'

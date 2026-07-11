@@ -23,17 +23,19 @@ services:
       - sink-app
 
   # Logs every request it receives (method, path, headers, body) to stdout.
+  # Pinned by digest; tag: mendhak/http-https-echo:37
   webhook-siem:
-    image: mendhak/http-https-echo:37
+    image: mendhak/http-https-echo@sha256:f55000d9196bd3c853d384af7315f509d21ffb85de315c26e9874033b9f83e15
 
+  # Pinned by digest; tag: otel/opentelemetry-collector:0.156.0
   sink-app:
-    image: otel/opentelemetry-collector:0.156.0
+    image: otel/opentelemetry-collector@sha256:0beba82d63792511591522a8d582904b9a8ae81710357bfcab731607b8b0ffe2
     command: ["--config=/etc/otelcol/sink.yaml"]
     volumes:
       - ./demo/sink.yaml:/etc/otelcol/sink.yaml:ro
 
   gen-traces:
-    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:54c6f259070137716c741209b41d6b6742ace57fff0d8d754d88aaf310536834
     command: ["traces", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
               "--duration", "5s"]
@@ -41,7 +43,7 @@ services:
       - router
 
   gen-metrics:
-    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:54c6f259070137716c741209b41d6b6742ace57fff0d8d754d88aaf310536834
     command: ["metrics", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
               "--duration", "5s"]
@@ -49,7 +51,7 @@ services:
       - router
 
   gen-logs:
-    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:54c6f259070137716c741209b41d6b6742ace57fff0d8d754d88aaf310536834
     command: ["logs", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
               "--duration", "5s"]
@@ -58,7 +60,7 @@ services:
 
   # Deliberately sends without a token; the router must reject it.
   gen-noauth:
-    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:54c6f259070137716c741209b41d6b6742ace57fff0d8d754d88aaf310536834
     command: ["traces", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--duration", "2s"]
     depends_on:
