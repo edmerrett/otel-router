@@ -3,7 +3,7 @@
 A start-to-finish guide for someone who has never used OpenTelemetry before.
 By the end you will understand what this service does, have run it on your own
 machine, connected a real telemetry source to it, and sent that telemetry to
-two destinations at once.
+multiple destinations at once.
 
 Read the chapters in order the first time. Later, use the table of contents to
 jump back to what you need.
@@ -101,17 +101,22 @@ The router does exactly four things:
    internet.
 3. **Batches** the telemetry so destinations receive tidy groups rather than a
    flood of tiny requests.
-4. **Fans out** to two destinations, which are deliberately different shapes so
-   the router covers the two cases you meet in the real world:
-   - **`siem`** — a *webhook-style* destination. Logs only, posted as plain
-     JSON to one fixed URL, authenticated with header keys. This matches
-     Google SecOps webhook feeds and similar HTTPS ingestion endpoints.
-   - **`app`** — a *native OTLP* destination. All three signals, sent to a
-     standard OTLP endpoint with a bearer/authorization header. This matches
-     observability platforms and Harmonic Security's OTLP endpoint.
+4. **Fans out** to the destinations you define. You list as many as you like in
+   `config/destinations.yaml`, and each chooses which signals it receives. The
+   shipped file includes two examples that cover the two shapes you meet in the
+   real world:
+   - **`otlphttp/webhook`** is a *webhook-style* destination. Logs only, posted
+     as plain JSON to one fixed URL, authenticated with header keys. This
+     matches Google SecOps webhook feeds and similar HTTPS ingestion endpoints.
+   - **`otlphttp/backend`** is a *native OTLP* destination. All three signals,
+     sent to a standard OTLP endpoint with a bearer/authorization header. This
+     matches observability platforms and Harmonic Security's OTLP endpoint.
+
+   Neither example is special: rename, duplicate, or delete them to match your
+   own destinations.
 
 Every address and every secret is supplied at runtime through **environment
-variables**. Nothing sensitive is written into the config file or baked into
+variables**. Nothing sensitive is written into the config files or baked into
 the container image. This is central to keeping your credentials safe, and
 Chapter 7 is devoted to it.
 
@@ -188,7 +193,7 @@ rather than through the test's assertions:
 docker compose up          # Ctrl-C to stop
 ```
 
-Watch the `webhook-siem` and `sink-app` containers log the telemetry arriving.
+Watch the `sink-webhook` and `sink-backend` containers log the telemetry arriving.
 When done:
 
 ```bash
@@ -202,8 +207,11 @@ swapping the fakes for real things.
 
 ## Chapter 6 — Read the config file
 
-Open `config/otel-router.yaml`. With Chapter 2's vocabulary it now reads
-plainly. Here is the shape, annotated:
+The config is split across two files that the collector merges at startup.
+You rarely touch the first and regularly touch the second.
+
+**`config/base.yaml`** is the fixed core: how telemetry comes in and is
+authenticated. With Chapter 2's vocabulary it reads plainly:
 
 ```yaml
 extensions:
@@ -219,35 +227,47 @@ receivers:
 processors:
   batch: {}                         # group before sending
 
-exporters:
-  otlphttp/siem:                    # destination A: webhook-style
-    logs_endpoint: ${env:SIEM_ENDPOINT}
-    encoding: json
-    headers:
-      X-goog-api-key:       ${env:SIEM_API_KEY}
-      X-Webhook-Access-Key: ${env:SIEM_SECRET}
-  otlphttp/app:                     # destination B: native OTLP
-    endpoint: ${env:APP_ENDPOINT}
-    headers:
-      Authorization: ${env:APP_AUTH}
-
 service:
-  extensions: [bearertokenauth/inbound]
-  pipelines:                        # wire receivers -> exporters per signal
-    traces:  { receivers: [otlp], processors: [batch], exporters: [otlphttp/app] }
-    metrics: { receivers: [otlp], processors: [batch], exporters: [otlphttp/app] }
-    logs:    { receivers: [otlp], processors: [batch], exporters: [otlphttp/siem, otlphttp/app] }
+  extensions: [bearertokenauth/inbound, health_check]
+  # No pipelines here: destinations.yaml supplies them.
 ```
 
-Two things to notice, because you will change them later:
+**`config/destinations.yaml`** is where you say where telemetry goes. This is
+the file you edit. It defines one exporter per destination and wires them into
+per-signal pipelines:
 
+```yaml
+exporters:
+  otlphttp/webhook:                    # example destination: webhook-style
+    logs_endpoint: ${env:WEBHOOK_ENDPOINT}
+    encoding: json
+    headers:
+      X-goog-api-key:       ${env:WEBHOOK_API_KEY}
+      X-Webhook-Access-Key: ${env:WEBHOOK_SECRET}
+  otlphttp/backend:                    # example destination: native OTLP
+    endpoint: ${env:BACKEND_ENDPOINT}
+    headers:
+      Authorization: ${env:BACKEND_AUTH}
+
+service:
+  pipelines:                        # wire receivers -> exporters per signal
+    traces:  { receivers: [otlp], processors: [batch], exporters: [otlphttp/backend] }
+    metrics: { receivers: [otlp], processors: [batch], exporters: [otlphttp/backend] }
+    logs:    { receivers: [otlp], processors: [batch], exporters: [otlphttp/webhook, otlphttp/backend] }
+```
+
+The pipelines here reference the `otlp` receiver and `batch` processor from
+`base.yaml`; the merge makes them one config. Three things to notice, because
+you will change them later:
+
+- **Add or remove a destination** by adding or deleting an exporter block and
+  listing it in the pipelines it should feed. There can be as many as you want.
 - **Every `${env:...}` is a value filled in at runtime.** The file names the
-  secrets; it never contains them.
-- **The `pipelines` block decides who gets what.** `logs` lists both
-  exporters, so both destinations receive logs. `traces` and `metrics` list
-  only `otlphttp/app`, so the webhook destination never sees them. To change
-  which destination gets which signal, add or remove an exporter name from a
-  pipeline. That is the whole mechanism.
+  secrets; it never contains them. Header names are whatever your destination
+  expects, so edit them freely.
+- **The `pipelines` block decides who gets what.** `logs` lists both example
+  exporters, so both receive logs. `traces` and `metrics` list only
+  `otlphttp/backend`, so the webhook destination never sees them.
 
 ---
 
@@ -261,9 +281,9 @@ secret, and mishandling any of them is how leaks happen.
 | Secret            | What it protects                                          |
 |-------------------|----------------------------------------------------------|
 | `INBOUND_TOKEN`   | The router's front door. Anyone with it can push data in.|
-| `SIEM_API_KEY`    | Your Google Cloud API key for the SecOps feed.           |
-| `SIEM_SECRET`     | Your SecOps feed's secret key.                            |
-| `APP_AUTH`        | Your credential for the app/Harmonic destination.        |
+| `WEBHOOK_API_KEY`    | Your Google Cloud API key for the SecOps feed.           |
+| `WEBHOOK_SECRET`     | Your SecOps feed's secret key.                            |
+| `BACKEND_AUTH`        | Your credential for the app/Harmonic destination.        |
 
 **Rule 1 — generate the inbound token from real randomness.** Never invent it
 by hand. Use:
@@ -278,7 +298,7 @@ of `INBOUND_TOKEN`, and the same string goes into every sender's
 
 **Rule 2 — keep secrets out of the config file and the image.** The design
 already does this: every credential is an `${env:...}` reference. Do not
-"simplify" by pasting a real value into `config/otel-router.yaml`, because that
+"simplify" by pasting a real value into `config/destinations.yaml`, because that
 file is in git and would leak the secret to everyone with repo access.
 
 **Rule 3 — never commit secrets to git.** The safe pattern is an environment
@@ -317,7 +337,7 @@ process, never on disk in your project and never in version control.
 without TLS.** The `Authorization` header and the raw telemetry travel in the
 request. Over plain HTTP they are readable by anyone on the path. So:
 
-- `SIEM_ENDPOINT` and `APP_ENDPOINT` must be `https://` URLs in production.
+- `WEBHOOK_ENDPOINT` and `BACKEND_ENDPOINT` must be `https://` URLs in production.
 - The router serves plaintext by default. When you expose it (Chapter 9),
   either something in front of it provides HTTPS (ngrok for testing; a load
   balancer or reverse proxy in production), or you enable the router's own
@@ -349,11 +369,11 @@ Edit it to look like this, with your real values:
 
 ```bash
 INBOUND_TOKEN=<output of: openssl rand -hex 32>
-SIEM_ENDPOINT=https://<region>-chronicle.googleapis.com/.../feeds/<id>:importPushLogs
-SIEM_API_KEY=<your Google Cloud API key>
-SIEM_SECRET=<your feed secret>
-APP_ENDPOINT=https://<your app backend OTLP base URL>
-APP_AUTH=Bearer <your app backend token>
+WEBHOOK_ENDPOINT=https://<region>-chronicle.googleapis.com/.../feeds/<id>:importPushLogs
+WEBHOOK_API_KEY=<your Google Cloud API key>
+WEBHOOK_SECRET=<your feed secret>
+BACKEND_ENDPOINT=https://<your app backend OTLP base URL>
+BACKEND_AUTH=Bearer <your app backend token>
 ```
 
 **Step 2 — build and run:**
@@ -560,8 +580,8 @@ secret invalidates the old one immediately — update the router in the same
 change. Rotate on a schedule, and at once if a value may have leaked.
 
 **Change which destination gets which signal.** Edit the `pipelines` block in
-`config/otel-router.yaml` (Chapter 6), then rebuild the image. Example: to send
-metrics to the SIEM too, add `otlphttp/siem` to the `metrics` pipeline's
+`config/destinations.yaml` (Chapter 6), then rebuild the image. Example: to send
+metrics to the SIEM too, add `otlphttp/webhook` to the `metrics` pipeline's
 `exporters` list.
 
 **Add a third destination.** Copy one of the `otlphttp/*` exporter blocks under
@@ -604,7 +624,7 @@ queues.
 - **Bearer token** — a shared secret string sent in the `Authorization` header
   as `Bearer <token>`. Whoever holds it is trusted. Treat it like a password.
 - **Collector** — the OpenTelemetry program that receives, processes, and sends
-  telemetry. otel-router is a Collector plus one config file.
+  telemetry. otel-router is a Collector plus a small amount of configuration.
 - **Exporter** — the config component that sends telemetry out to one
   destination.
 - **Fan-out** — copying one inbound stream to multiple destinations.

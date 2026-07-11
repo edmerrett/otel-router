@@ -53,11 +53,11 @@ directly and drop the webhook shape.
    | Variable        | Value                                                  |
    |-----------------|--------------------------------------------------------|
    | `INBOUND_TOKEN` | the token from 1.                                      |
-   | `APP_ENDPOINT`  | Harmonic OTLP base URL                                 |
-   | `APP_AUTH`      | Harmonic auth header value                             |
-   | `SIEM_ENDPOINT` | SecOps webhook feed URL (full, copied from console)    |
-   | `SIEM_API_KEY`  | Google Cloud API key (`X-goog-api-key`)                |
-   | `SIEM_SECRET`   | feed secret key (`X-Webhook-Access-Key`)               |
+   | `BACKEND_ENDPOINT`  | Harmonic OTLP base URL                                 |
+   | `BACKEND_AUTH`      | Harmonic auth header value                             |
+   | `WEBHOOK_ENDPOINT` | SecOps webhook feed URL (full, copied from console)    |
+   | `WEBHOOK_API_KEY`  | Google Cloud API key (`X-goog-api-key`)                |
+   | `WEBHOOK_SECRET`   | feed secret key (`X-Webhook-Access-Key`)               |
 
 4. Smoke-test from any machine before wiring anything else up:
    `./demo/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"` —
@@ -104,9 +104,9 @@ Decisions to make deliberately:
 
 1. Get the OTLP endpoint URL and auth header from the Harmonic console/team
    (not public).
-2. `APP_ENDPOINT` = that base URL. `APP_AUTH` = the header value.
+2. `BACKEND_ENDPOINT` = that base URL. `BACKEND_AUTH` = the header value.
 3. If Harmonic's header is not `Authorization`, rename the key under
-   `otlphttp/app.headers` in `config/otel-router.yaml` and rebuild.
+   `otlphttp/backend.headers` in `config/destinations.yaml` and rebuild.
 4. Harmonic receives all three signals by default (it wants the event logs;
    metrics/traces are cheap to include). Trim pipelines in the config if
    they ask for less.
@@ -122,16 +122,16 @@ parse — see the parsing note below.
 1. **API key**: Google Cloud console (the project bound to your SecOps
    instance) → APIs & Services → Credentials → Create credentials → API
    key. Restrict it to the **Chronicle API** (enable that API first). This
-   is `SIEM_API_KEY`.
+   is `WEBHOOK_API_KEY`.
 2. **Feed**: SecOps console → **Settings → Feeds → Add new**. Name it,
    Source type **Webhook**, pick a log type (see parsing note), Next through
    the optional params, Submit.
 3. **Secret**: on the created feed, click **Generate Secret Key** — shown
-   once; store it. This is `SIEM_SECRET`.
+   once; store it. This is `WEBHOOK_SECRET`.
 4. **URL**: feed **Details tab → Endpoint Information** — copy the full
    endpoint URL (shaped like
    `https://<region>-chronicle.googleapis.com/v1alpha/projects/<n>/locations/<loc>/instances/<id>/feeds/<id>:importPushLogs`;
-   always copy, never construct). This is `SIEM_ENDPOINT`.
+   always copy, never construct). This is `WEBHOOK_ENDPOINT`.
 5. Limits worth knowing: 4 MB per request, ~1 MB per log line on push
    feeds; success returns an empty 200.
 
@@ -166,7 +166,7 @@ Architecture: this router's SIEM exporter becomes plain OTLP pointing at a
 on 4317/4318), which exports to SecOps via its
 [Chronicle exporter](https://github.com/observIQ/bindplane-otel-collector/blob/main/exporter/chronicleexporter/README.md)
 using service-account credentials, with proper `log_type` handling and the
-supported ingestion API. Config change here: replace the `otlphttp/siem`
+supported ingestion API. Config change here: replace the `otlphttp/webhook`
 block with a normal `endpoint:`-style OTLP exporter aimed at the gateway
 (the README's "Swapping destination shapes" section).
 
@@ -177,7 +177,7 @@ auth instead of static keys. It costs you one more running component.
 
 Google's SecOps exporter is an accepted donation to
 opentelemetry-collector-contrib. When it appears in a contrib release,
-bump this image's pin, swap `otlphttp/siem` for the new exporter, and
+bump this image's pin, swap `otlphttp/webhook` for the new exporter, and
 retire the webhook feed. Check the
 [tracking issue](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/46148).
 
@@ -200,7 +200,7 @@ against your SecOps tier's ingestion cap.
 
 ## Operational notes
 
-- **Rotation**: `INBOUND_TOKEN` and `SIEM_SECRET` are static — rotate on a
+- **Rotation**: `INBOUND_TOKEN` and `WEBHOOK_SECRET` are static — rotate on a
   schedule (regenerating the feed secret invalidates the old one
   immediately; update the router env in the same change).
 - **Delivery**: destination outages are absorbed by in-memory retry queues;

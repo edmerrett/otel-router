@@ -1,34 +1,35 @@
 # Demo harness: the router fans out to two differently-shaped destinations.
-# webhook-siem is a plain HTTP echo server standing in for a webhook-style
-# SIEM feed (logs only, JSON, access-key header); sink-app is a real OTLP
-# collector standing in for an observability backend (all signals). Run
-# `docker compose up` and watch both receive data, while gen-noauth (no
-# bearer token) is rejected. Run demo/test.sh for the asserted version.
+# sink-webhook is a plain HTTP echo server standing in for a webhook-style feed
+# (logs only, JSON, access-key headers); sink-backend is a real OTLP collector
+# standing in for an observability backend (all signals). Both are just example
+# destinations defined in config/destinations.yaml. Run `docker compose up` and
+# watch both receive data, while gen-noauth (no bearer token) is rejected. Run
+# demo/test.sh for the asserted version.
 
 services:
   router:
     build: .
     environment:
       INBOUND_TOKEN: demo-inbound-token
-      SIEM_ENDPOINT: http://webhook-siem:8080/v1/ingest
-      SIEM_API_KEY: demo-google-api-key
-      SIEM_SECRET: demo-webhook-secret
-      APP_ENDPOINT: http://sink-app:4318
-      APP_AUTH: Bearer demo-app-token
+      BACKEND_ENDPOINT: http://sink-backend:4318
+      BACKEND_AUTH: Bearer demo-backend-token
+      WEBHOOK_ENDPOINT: http://sink-webhook:8080/v1/ingest
+      WEBHOOK_API_KEY: demo-api-key
+      WEBHOOK_SECRET: demo-webhook-secret
     ports:
       - "4317:4317"
       - "4318:4318"
     depends_on:
-      - webhook-siem
-      - sink-app
+      - sink-webhook
+      - sink-backend
 
   # Logs every request it receives (method, path, headers, body) to stdout.
   # Pinned by digest; tag: mendhak/http-https-echo:37
-  webhook-siem:
+  sink-webhook:
     image: mendhak/http-https-echo@sha256:f55000d9196bd3c853d384af7315f509d21ffb85de315c26e9874033b9f83e15
 
   # Pinned by digest; tag: otel/opentelemetry-collector:0.156.0
-  sink-app:
+  sink-backend:
     image: otel/opentelemetry-collector@sha256:0beba82d63792511591522a8d582904b9a8ae81710357bfcab731607b8b0ffe2
     command: ["--config=/etc/otelcol/sink.yaml"]
     volumes:

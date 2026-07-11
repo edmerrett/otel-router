@@ -1,0 +1,64 @@
+# Destinations: this is the only file you edit to change where telemetry goes.
+#
+# A destination is an exporter (below) plus a listing in one or more of the
+# per-signal pipelines at the bottom. Add as many as you like, remove any you
+# do not need, and mix protocols freely. This file is merged on top of
+# base.yaml at startup, so it can reference the `otlp` receiver and the `batch`
+# processor defined there.
+#
+# Endpoints and secrets come from environment variables via ${env:...}; nothing
+# sensitive is baked in. Header NAMES are whatever each destination expects,
+# so edit them to match your service (they are not fixed by the router).
+#
+# Override this file without rebuilding by mounting your own copy over it:
+#   docker run ... -v $(pwd)/my-destinations.yaml:/etc/otelcol-contrib/destinations.yaml:ro
+#
+# The two examples below show the two shapes most backends use. They happen to
+# model an OTLP observability backend and a JSON webhook feed, but neither is
+# special: rename, duplicate, or delete them as needed.
+
+exporters:
+  # Shape 1: native OTLP/HTTP. Standard /v1/{traces,metrics,logs} paths under
+  # one base URL, with a single auth header. Suits most observability backends.
+  otlphttp/backend:
+    endpoint: ${env:BACKEND_ENDPOINT}
+    headers:
+      Authorization: ${env:BACKEND_AUTH}
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: true
+
+  # Shape 2: webhook-style. Logs posted as plain JSON to one fixed URL with
+  # custom access-key headers. Webhook feeds rarely accept gzip, hence
+  # compression: none. Suits SIEM feeds and similar HTTPS ingestion endpoints.
+  otlphttp/webhook:
+    logs_endpoint: ${env:WEBHOOK_ENDPOINT}
+    encoding: json
+    compression: none
+    headers:
+      # Rename these to whatever your destination expects.
+      X-goog-api-key: ${env:WEBHOOK_API_KEY}
+      X-Webhook-Access-Key: ${env:WEBHOOK_SECRET}
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: true
+
+service:
+  # Per-destination signal selection: a destination receives a signal only if
+  # its exporter is listed in that signal's pipeline. Here the OTLP backend gets
+  # everything and the webhook gets logs only. Adjust the lists to taste.
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/backend]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/backend]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/backend, otlphttp/webhook]

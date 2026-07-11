@@ -1,21 +1,29 @@
 #!/bin/sh
-# Fail closed: refuse to start unless every endpoint and credential is set.
-# Without this the collector boots with empty auth headers and forwards
-# telemetry to destinations unauthenticated. The inbound guard already fails
-# closed on a missing INBOUND_TOKEN (the bearertokenauth extension rejects an
-# empty token); this extends the same discipline to the outbound path.
+# Fail closed on the one thing the router cannot run safely without: the inbound
+# bearer token. An empty INBOUND_TOKEN would let the collector accept
+# unauthenticated telemetry, so refuse to start rather than expose an open door.
 set -e
-for v in INBOUND_TOKEN SIEM_ENDPOINT SIEM_API_KEY SIEM_SECRET APP_ENDPOINT APP_AUTH; do
+if [ -z "${INBOUND_TOKEN:-}" ]; then
+  echo "otel-router: required environment variable INBOUND_TOKEN is not set; refusing to start" >&2
+  exit 1
+fi
+
+# Outbound destinations are user-defined in destinations.yaml, so the router
+# cannot know which endpoint/credential variables matter. List the ones your
+# destinations rely on in REQUIRE_ENV (space-separated) to extend the same
+# fail-closed discipline to them, e.g.
+#   REQUIRE_ENV="BACKEND_ENDPOINT BACKEND_AUTH WEBHOOK_ENDPOINT"
+for v in ${REQUIRE_ENV:-}; do
   eval "val=\${$v:-}"
   if [ -z "$val" ]; then
-    echo "otel-router: required environment variable $v is not set; refusing to start" >&2
+    echo "otel-router: required environment variable $v (listed in REQUIRE_ENV) is not set; refusing to start" >&2
     exit 1
   fi
 done
 
-# Optional TLS: TLS_ENABLED=true layers config/tls.yaml over the base config
-# (the collector merges repeated --config flags), putting both OTLP ports
-# behind the mounted cert/key. Same fail-closed rule as the secrets above:
+# Optional TLS: TLS_ENABLED=true layers config/tls.yaml on top of the merged
+# config (the collector merges repeated --config flags), putting both OTLP ports
+# behind the mounted cert/key. Same fail-closed rule as the token above:
 # TLS requested but unusable must not silently fall back to plaintext.
 case "${TLS_ENABLED:-}" in
   [Tt][Rr][Uu][Ee]|1|[Yy][Ee][Ss])

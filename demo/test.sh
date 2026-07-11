@@ -16,18 +16,18 @@ docker compose down --remove-orphans >/dev/null 2>&1
 docker compose up -d --build --quiet-pull >/dev/null 2>&1 || { echo "FAIL  stack failed to start"; exit 1; }
 docker compose wait gen-traces gen-metrics gen-logs gen-noauth >/dev/null 2>&1
 
-app=$(docker compose logs sink-app 2>&1)
+app=$(docker compose logs sink-backend 2>&1)
 for sig in traces metrics logs; do
   echo "$app" | grep -q "\"otelcol.signal\": \"$sig\""
-  check $? "OTLP destination (sink-app) received $sig"
+  check $? "OTLP destination (sink-backend) received $sig"
 done
 
-hook=$(docker compose logs webhook-siem 2>&1)
+hook=$(docker compose logs sink-webhook 2>&1)
 echo "$hook" | grep -q '"path": "/v1/ingest"'
 check $? "webhook destination received POST on its feed URL"
 echo "$hook" | grep -q '"x-webhook-access-key": "demo-webhook-secret"'
 check $? "webhook destination received the secret-key header"
-echo "$hook" | grep -q '"x-goog-api-key": "demo-google-api-key"'
+echo "$hook" | grep -q '"x-goog-api-key": "demo-api-key"'
 check $? "webhook destination received the API-key header"
 echo "$hook" | grep -q 'resourceLogs'
 check $? "webhook destination received log records as JSON"

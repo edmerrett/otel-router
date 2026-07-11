@@ -1,0 +1,39 @@
+# Base config: the fixed core of the router. It defines how telemetry is
+# RECEIVED and authenticated, but deliberately no destinations. Where data
+# goes is defined separately in destinations.yaml, so you never edit this file
+# to add or change a backend.
+#
+# The collector is always started with at least two --config files that it
+# deep-merges: this one plus a destinations file (see the Dockerfile CMD and
+# entrypoint.sh). base.yaml on its own has no pipelines and will not start.
+#
+# Senders must present "Authorization: Bearer $INBOUND_TOKEN" on either port.
+
+extensions:
+  # Rejects any inbound request without the expected bearer token.
+  bearertokenauth/inbound:
+    token: ${env:INBOUND_TOKEN}
+  # Liveness endpoint for orchestrators / the Docker HEALTHCHECK.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth/inbound
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/inbound
+
+processors:
+  # Batches telemetry before export; protects destinations from request storms.
+  batch: {}
+
+service:
+  extensions: [bearertokenauth/inbound, health_check]
+  # No pipelines here on purpose: destinations.yaml supplies the exporters and
+  # the per-signal pipelines. The two files are merged at startup.

@@ -45,18 +45,18 @@ echo "Verifying delivery via Docker logs ..."
 deadline=$((SECONDS + 15))
 span=1 metric=1 log=1 hook=1
 while [ $SECONDS -lt $deadline ]; do
-  app=$(docker compose logs sink-app 2>/dev/null)
+  app=$(docker compose logs sink-backend 2>/dev/null)
   echo "$app" | grep -q "${MARKER}_span"   && span=0
   echo "$app" | grep -q "${MARKER}_metric" && metric=0
   echo "$app" | grep -q "${MARKER}_log"    && log=0
-  docker compose logs webhook-siem 2>/dev/null | grep -q "${MARKER}_log" && hook=0
+  docker compose logs sink-webhook 2>/dev/null | grep -q "${MARKER}_log" && hook=0
   [ $((span + metric + log + hook)) -eq 0 ] && break
   sleep 1
 done
-check $span   "trace arrived at OTLP destination (sink-app)"
-check $metric "metric arrived at OTLP destination (sink-app)"
-check $log    "log arrived at OTLP destination (sink-app)"
-check $hook   "log arrived at webhook destination (webhook-siem)"
+check $span   "trace arrived at OTLP destination (sink-backend)"
+check $metric "metric arrived at OTLP destination (sink-backend)"
+check $log    "log arrived at OTLP destination (sink-backend)"
+check $hook   "log arrived at webhook destination (sink-webhook)"
 
 [ "$fail" -eq 0 ] && echo "All checks passed." || echo "Some checks FAILED."
 exit "$fail"
