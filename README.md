@@ -32,6 +32,22 @@ Watch the output: the same telemetry appears in the logs of **both**
 `sink-siem` and `sink-app`, while `gen-noauth` (which sends without a bearer
 token) is rejected with `Unauthenticated`. Ctrl-C to stop.
 
+The demo mirrors a real deployment's topology: generators sit on a `sources`
+network, sinks on a `destinations` network, and the router is the only
+container on both, so telemetry cannot reach the sinks except through it.
+
+## Self-contained test
+
+Asserts everything the demo shows, then exits 0 or 1:
+
+```bash
+./demo/test.sh
+```
+
+Checks: both sinks receive traces, metrics and logs; a sender without the
+bearer token is rejected; and the sinks are unreachable from the source
+network (the sink hostname does not even resolve there).
+
 ## Running against real destinations
 
 Build and run the router with your token and endpoints supplied as
@@ -146,4 +162,5 @@ Dockerfile               pinned Collector (contrib) image + config
 config/otel-router.yaml  the router: one source, auth, two destinations
 docker-compose.yml       demo harness (router + 2 sinks + generators)
 demo/sink.yaml           dummy destination used by the demo
+demo/test.sh             self-contained end-to-end test
 ```

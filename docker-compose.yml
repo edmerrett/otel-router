@@ -1,7 +1,12 @@
-# Demo harness: the router plus two dummy OTLP sinks standing in for your
-# SIEM and app backend, and generators that fire traces/metrics/logs at the
-# router. Run `docker compose up`; the same telemetry appears in the logs of
-# BOTH sink-siem and sink-app, while gen-noauth (no bearer token) is rejected.
+# Demo harness: telemetry sources and destination sinks live on SEPARATE
+# networks; the router is the only container on both, so telemetry can only
+# reach the sinks through it. Run `docker compose up`: the same telemetry
+# appears in the logs of BOTH sink-siem and sink-app, while gen-noauth (no
+# bearer token) is rejected. Run demo/test.sh for the asserted version.
+
+networks:
+  sources:      # where your services would live
+  destinations: # where the SIEM / app backend would live
 
 services:
   router:
@@ -15,6 +20,7 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
+    networks: [sources, destinations]
     depends_on:
       - sink-siem
       - sink-app
@@ -24,18 +30,21 @@ services:
     command: ["--config=/etc/otelcol/sink.yaml"]
     volumes:
       - ./demo/sink.yaml:/etc/otelcol/sink.yaml:ro
+    networks: [destinations]
 
   sink-app:
     image: otel/opentelemetry-collector:0.156.0
     command: ["--config=/etc/otelcol/sink.yaml"]
     volumes:
       - ./demo/sink.yaml:/etc/otelcol/sink.yaml:ro
+    networks: [destinations]
 
   gen-traces:
     image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
     command: ["traces", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
               "--duration", "5s"]
+    networks: [sources]
     depends_on:
       - router
 
@@ -44,6 +53,7 @@ services:
     command: ["metrics", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
               "--duration", "5s"]
+    networks: [sources]
     depends_on:
       - router
 
@@ -52,6 +62,7 @@ services:
     command: ["logs", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
               "--duration", "5s"]
+    networks: [sources]
     depends_on:
       - router
 
@@ -60,5 +71,6 @@ services:
     image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
     command: ["traces", "--otlp-endpoint", "router:4317", "--otlp-insecure",
               "--duration", "2s"]
+    networks: [sources]
     depends_on:
       - router
