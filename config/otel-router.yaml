@@ -12,7 +12,8 @@
 #
 #   INBOUND_TOKEN   bearer token senders must present to this router
 #   SIEM_ENDPOINT   full webhook feed URL, e.g. https://siem.example.com/v1/ingest
-#   SIEM_AUTH       access-key value for the X-Webhook-Access-Key header
+#   SIEM_API_KEY    value for the X-goog-api-key header (Google SecOps feeds)
+#   SIEM_SECRET     value for the X-Webhook-Access-Key header
 #   APP_ENDPOINT    OTLP/HTTP base URL, e.g. https://o11y.example.com:4318
 #   APP_AUTH        value for the Authorization header, e.g. "Bearer <token>"
 #
@@ -48,7 +49,8 @@ exporters:
     encoding: json
     compression: none
     headers:
-      X-Webhook-Access-Key: ${env:SIEM_AUTH}
+      X-goog-api-key: ${env:SIEM_API_KEY}
+      X-Webhook-Access-Key: ${env:SIEM_SECRET}
     retry_on_failure:
       enabled: true
     sending_queue:

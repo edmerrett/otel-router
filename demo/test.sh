@@ -25,8 +25,10 @@ done
 hook=$(docker compose logs webhook-siem 2>&1)
 echo "$hook" | grep -q '"path": "/v1/ingest"'
 check $? "webhook destination received POST on its feed URL"
-echo "$hook" | grep -q '"x-webhook-access-key": "demo-webhook-key"'
-check $? "webhook destination received the access-key header"
+echo "$hook" | grep -q '"x-webhook-access-key": "demo-webhook-secret"'
+check $? "webhook destination received the secret-key header"
+echo "$hook" | grep -q '"x-goog-api-key": "demo-google-api-key"'
+check $? "webhook destination received the API-key header"
 echo "$hook" | grep -q 'resourceLogs'
 check $? "webhook destination received log records as JSON"
 echo "$hook" | grep -qE 'resourceSpans|resourceMetrics'

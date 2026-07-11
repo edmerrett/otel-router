@@ -53,6 +53,10 @@ destination receives log records as JSON on its feed URL with the access-key
 header — and nothing else (no traces/metrics); a sender without the inbound
 bearer token is rejected.
 
+For the full production walkthrough — Claude Teams managed settings,
+Harmonic Security, and Google SecOps (webhook feed vs Bindplane) — see
+[docs/SETUP.md](docs/SETUP.md).
+
 ## Sending sample traffic by hand
 
 `demo/send-sample.sh` posts one example trace, metric and log to the router
@@ -136,7 +140,8 @@ Everything lives in [`config/otel-router.yaml`](config/otel-router.yaml).
 |-----------------|-------------------------------------------------------|
 | `INBOUND_TOKEN` | Bearer token senders must present to this router      |
 | `SIEM_ENDPOINT` | Full webhook feed URL logs are posted to              |
-| `SIEM_AUTH`     | Value of the `X-Webhook-Access-Key` header            |
+| `SIEM_API_KEY`  | Value of the `X-goog-api-key` header                  |
+| `SIEM_SECRET`   | Value of the `X-Webhook-Access-Key` header            |
 | `APP_ENDPOINT`  | OTLP/HTTP base URL of the app backend                 |
 | `APP_AUTH`      | `Authorization` header value sent to the app backend  |
 

@@ -11,7 +11,8 @@ services:
     environment:
       INBOUND_TOKEN: demo-inbound-token
       SIEM_ENDPOINT: http://webhook-siem:8080/v1/ingest
-      SIEM_AUTH: demo-webhook-key
+      SIEM_API_KEY: demo-google-api-key
+      SIEM_SECRET: demo-webhook-secret
       APP_ENDPOINT: http://sink-app:4318
       APP_AUTH: Bearer demo-app-token
     ports:
