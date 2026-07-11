@@ -22,6 +22,12 @@ exporters:
   # one base URL, with a single auth header. Suits most observability backends.
   otlphttp/backend:
     endpoint: ${env:BACKEND_ENDPOINT}
+    # Wire format. The default is protobuf+gzip (smaller, faster) and most OTLP
+    # backends accept it, so drop these two lines for those. Some backends take
+    # OTLP/JSON uncompressed only and reject the default (protobuf -> 415,
+    # gzip -> 400); set these for those.
+    encoding: json
+    compression: none
     headers:
       Authorization: ${env:BACKEND_AUTH}
     retry_on_failure:
