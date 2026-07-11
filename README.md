@@ -53,9 +53,11 @@ destination receives log records as JSON on its feed URL with the access-key
 header — and nothing else (no traces/metrics); a sender without the inbound
 bearer token is rejected.
 
-For the full production walkthrough — Claude Teams managed settings,
-Harmonic Security, and Google SecOps (webhook feed vs Bindplane) — see
-[docs/SETUP.md](docs/SETUP.md).
+New to OpenTelemetry? [docs/USER_GUIDE.md](docs/USER_GUIDE.md) is a
+start-to-finish guide from zero — concepts, first run, secrets, exposure and
+operation. For the destination-specific production walkthrough — Claude Teams
+managed settings, Harmonic Security, and Google SecOps (webhook feed vs
+Bindplane) — see [docs/SETUP.md](docs/SETUP.md).
 
 ## Sending sample traffic by hand
 
@@ -79,20 +81,21 @@ skipped when the demo stack isn't running locally:
 
 ## Running against real destinations
 
-Build and run the router with your token and endpoints supplied as
-environment variables — nothing sensitive is baked into the image:
+Supply your token and endpoints at runtime — nothing sensitive is baked into
+the image. Keep secrets out of your shell history and git by putting them in a
+gitignored `.env` file and loading it with `--env-file`:
 
 ```bash
+cp .env.example .env      # then edit .env with your real values
 docker build -t otel-router .
 
-docker run -p 4317:4317 -p 4318:4318 \
-  -e INBOUND_TOKEN="$(openssl rand -hex 32)" \
-  -e SIEM_ENDPOINT=https://siem.example.com/v1/ingest \
-  -e SIEM_AUTH="$SIEM_ACCESS_KEY" \
-  -e APP_ENDPOINT=https://o11y.example.com:4318 \
-  -e APP_AUTH="Bearer $APP_TOKEN" \
-  otel-router
+docker run -p 4317:4317 -p 4318:4318 --env-file .env otel-router
 ```
+
+`.env` holds `INBOUND_TOKEN`, `SIEM_ENDPOINT`, `SIEM_API_KEY`, `SIEM_SECRET`,
+`APP_ENDPOINT` and `APP_AUTH` (see [.env.example](.env.example)). For
+production, source these from a secret manager rather than a file on disk —
+see [docs/USER_GUIDE.md](docs/USER_GUIDE.md) chapter 7.
 
 Then point your services' OTLP exporters at the router, sending
 `Authorization: Bearer <INBOUND_TOKEN>`:

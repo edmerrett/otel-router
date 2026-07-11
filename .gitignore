@@ -1,0 +1,8 @@
+# Never commit real secrets. .env holds live tokens and destination keys.
+.env
+*.env
+!.env.example
+
+# Local editor / OS noise
+.DS_Store
+*.swp
