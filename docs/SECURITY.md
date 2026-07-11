@@ -35,11 +35,18 @@ referenced in the config as `${env:...}`. Nothing sensitive is written into
 
 ## Transport security
 
-The router does not terminate TLS. On its own it speaks plain HTTP, so:
+By default the router speaks plain HTTP, so:
 
-- **Never expose it publicly without TLS in front** (reverse proxy, load
-  balancer, or a platform that provides HTTPS). Otherwise the inbound bearer
-  token and all telemetry cross the network in cleartext.
+- **Never expose it publicly without TLS** — either terminate TLS in front
+  (reverse proxy, load balancer, or a platform that provides HTTPS), or
+  enable the router's own TLS mode. Otherwise the inbound bearer token and
+  all telemetry cross the network in cleartext.
+- **Native TLS is available when fronting isn't.** Set `TLS_ENABLED=true`
+  with `TLS_CERT_FILE`/`TLS_KEY_FILE` pointing at a mounted PEM pair and both
+  OTLP ports serve TLS. This fails closed: if TLS is requested but the cert
+  or key is missing/unreadable, the router refuses to start rather than
+  silently falling back to plaintext. The health port (13133) remains plain
+  HTTP for liveness probes.
 - **Destination endpoints must be `https://`.** An `http://` `APP_ENDPOINT` or
   `SIEM_ENDPOINT` would leak that destination's credential in the request.
 

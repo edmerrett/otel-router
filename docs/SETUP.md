@@ -42,10 +42,12 @@ directly and drop the webhook shape.
 1. Generate the inbound token: `openssl rand -hex 32`. Store it in your
    secret manager; it goes to two places (router env, Claude managed
    settings).
-2. Run the container somewhere with a public HTTPS front. The router itself
-   does not terminate TLS — put it behind Cloud Run / Fly.io / a load
-   balancer / Caddy, forwarding to container port **4318** (OTLP/HTTP is all
-   Claude needs).
+2. Run the container somewhere with a public HTTPS front. Usually that means
+   TLS terminates in front — Cloud Run / Fly.io / a load balancer / Caddy,
+   forwarding to container port **4318** (OTLP/HTTP is all Claude needs).
+   Alternatively the router can serve TLS itself: set `TLS_ENABLED=true`
+   with a mounted cert/key (`TLS_CERT_FILE`/`TLS_KEY_FILE`) — handy for an
+   ALB HTTPS target group on ECS, where a self-signed cert is sufficient.
 3. Set the environment variables (destination values come from steps 3–4):
 
    | Variable        | Value                                                  |

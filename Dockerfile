@@ -14,6 +14,7 @@ USER 0
 COPY --from=busybox --chmod=0755 /bin/busybox /bin/busybox
 COPY --chmod=0755 entrypoint.sh /entrypoint.sh
 COPY config/otel-router.yaml /etc/otelcol-contrib/config.yaml
+COPY config/tls.yaml /etc/otelcol-contrib/tls.yaml
 USER 10001
 
 EXPOSE 4317 4318 13133

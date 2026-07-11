@@ -1,0 +1,49 @@
+# TLS variant of the demo: layer this over the base compose file to run the
+# router with TLS on both OTLP ports and generators that verify its cert.
+# Run demo/tls-test.sh for the asserted version (it also generates the
+# self-signed cert into demo/certs/ first):
+#
+#   docker compose -f docker-compose.yml -f demo/tls-compose.yml up
+
+services:
+  router:
+    environment:
+      TLS_ENABLED: "true"
+      TLS_CERT_FILE: /certs/tls.crt
+      TLS_KEY_FILE: /certs/tls.key
+    volumes:
+      - ./demo/certs:/certs:ro
+
+  # Same generators as the base file, minus --otlp-insecure (plaintext) and
+  # plus --ca-cert so they verify the router's self-signed cert (SAN: router).
+  gen-traces:
+    command: ["traces", "--otlp-endpoint", "router:4317",
+              "--ca-cert", "/certs/tls.crt",
+              "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
+              "--duration", "5s"]
+    volumes:
+      - ./demo/certs:/certs:ro
+
+  gen-metrics:
+    command: ["metrics", "--otlp-endpoint", "router:4317",
+              "--ca-cert", "/certs/tls.crt",
+              "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
+              "--duration", "5s"]
+    volumes:
+      - ./demo/certs:/certs:ro
+
+  gen-logs:
+    command: ["logs", "--otlp-endpoint", "router:4317",
+              "--ca-cert", "/certs/tls.crt",
+              "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
+              "--duration", "5s"]
+    volumes:
+      - ./demo/certs:/certs:ro
+
+  # Valid TLS, no bearer token: proves auth is still enforced under TLS.
+  gen-noauth:
+    command: ["traces", "--otlp-endpoint", "router:4317",
+              "--ca-cert", "/certs/tls.crt",
+              "--duration", "2s"]
+    volumes:
+      - ./demo/certs:/certs:ro
