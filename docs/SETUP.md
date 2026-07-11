@@ -133,6 +133,19 @@ parse — see the parsing note below.
 5. Limits worth knowing: 4 MB per request, ~1 MB per log line on push
    feeds; success returns an empty 200.
 
+**Transport compatibility.** The mechanics have been verified from both
+ends. The collector's `otlphttp` exporter treats any 2xx with an empty body
+as success (checked in the
+[exporter source](https://github.com/open-telemetry/opentelemetry-collector/blob/main/exporter/otlphttpexporter/otlp.go)) —
+and an empty 200 is exactly what SecOps webhook feeds return. Tested against
+this repo's webhook sink: one log in, exactly one POST out, zero exporter
+errors, no retries, even when the sink replies with non-OTLP JSON. On the
+SecOps side, webhook feeds accept an arbitrary raw JSON body by design (4 MB
+per request, ~1 MB per line; our envelope is a single line). What is NOT
+verified is a live SecOps tenant accepting and indexing the payload — run a
+30-minute spike with `send-sample.sh` pointed at a real feed before
+committing to this route.
+
 **Parsing note.** Each router POST is one OTLP `resourceLogs` JSON envelope
 (possibly several Claude events per envelope, thanks to batching). SecOps
 will store it raw against your chosen log type; to get proper UDM events
