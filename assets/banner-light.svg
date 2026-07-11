@@ -1,0 +1,26 @@
+<svg width="1200" height="300" viewBox="0 0 1200 300" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="otel-router: receive OTLP once, deliver it everywhere">
+  <defs>
+    <linearGradient id="beam" x1="60" y1="150" x2="300" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E09600"/>
+      <stop offset="1" stop-color="#425CC7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- panel -->
+  <rect x="8" y="8" width="1184" height="284" rx="16" fill="#F6F8FA" stroke="#D0D7DE" stroke-width="2"/>
+
+  <!-- glyph: one stream in, two streams out -->
+  <path d="M78 150 H166" stroke="url(#beam)" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="96" cy="150" r="5" fill="#E09600"/>
+  <circle cx="126" cy="150" r="5" fill="#C97E3F"/>
+  <circle cx="156" cy="150" r="5" fill="#6B6BB8"/>
+  <circle cx="192" cy="150" r="17" fill="#FFFFFF" stroke="#425CC7" stroke-width="5"/>
+  <path d="M206 139 C 244 118, 252 106, 286 103" stroke="#E09600" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <path d="M206 161 C 244 182, 252 194, 286 197" stroke="#425CC7" stroke-width="5" stroke-linecap="round" fill="none"/>
+  <circle cx="300" cy="101" r="11" fill="#E09600"/>
+  <circle cx="300" cy="199" r="11" fill="#425CC7"/>
+
+  <!-- wordmark -->
+  <text x="368" y="168" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="66" font-weight="700" fill="#1F2328">otel-router</text>
+  <text x="372" y="216" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="24" fill="#57606A">Receive OTLP once. Deliver it everywhere.</text>
+</svg>

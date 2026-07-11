@@ -1,155 +1,194 @@
-# Otel-router
+<div align="center">
 
-A lightweight container that receives OpenTelemetry (OTLP) data on a single
-authenticated endpoint and fans it out to two destinations: a webhook-style
-SIEM feed and a native OTLP observability backend.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+  <img src="assets/banner-light.svg" alt="otel-router: receive OTLP once, deliver it everywhere" width="800">
+</picture>
 
-Services can usually only export OTLP to one place. Point them all here
-instead, and this router duplicates the stream to every configured
-destination. It is a pinned build of the official
+**One authenticated OTLP endpoint in. Every destination out.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![OpenTelemetry Collector](https://img.shields.io/badge/OTel%20Collector-0.156.0%20pinned-425CC7?logo=opentelemetry&logoColor=white)](https://opentelemetry.io/docs/collector/)
+[![OTLP](https://img.shields.io/badge/OTLP-gRPC%20%2B%20HTTP-F5A800)](#-how-it-works)
+
+[Quick start](#-quick-start) ·
+[How it works](#-how-it-works) ·
+[Configuration](#-configuration) ·
+[Security](#-security) ·
+[Docs](#-documentation)
+
+</div>
+
+---
+
+## What is otel-router?
+
+Most services can export OpenTelemetry data to exactly one place. When both your
+SIEM and your observability platform want that stream, you are stuck.
+
+**otel-router** solves this with a single small container: point every sender at
+one authenticated endpoint, and it duplicates the stream to two differently
+shaped destinations. It is a pinned build of the official
 [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (contrib
-distribution) with a single config file: no custom code to maintain, and
-production-grade batching, retries and queueing for free.
+distribution) driven by one config file. There is no custom code to maintain,
+and you get production-grade batching, retries and queueing for free.
 
-```
-                             ┌──────────────┐
- your services ──OTLP+auth──▶│  otel-router │──JSON+key──▶ SIEM (webhook, logs)
- (one endpoint)              │  :4317/:4318 │──OTLP+auth──▶ app backend (all signals)
-                             └──────────────┘
-```
+Use it when:
 
-The two destination shapes cover most real backends:
+- 🛰️ Your **Claude Code / Claude Cowork** telemetry should land in **Google
+  SecOps** (or another SIEM) *and* an observability backend such as Harmonic
+  at the same time.
+- Senders support only one `OTEL_EXPORTER_OTLP_ENDPOINT` but you have two
+  or more consumers.
+- One destination wants webhook-style JSON with access-key headers, the other
+  wants native OTLP.
+- You want inbound telemetry gated by a bearer token, with fail-closed startup
+  when secrets are missing.
 
-- **Webhook-style** (`otlphttp/siem`): logs posted as plain JSON to one fixed
-  URL with an access-key header — the shape of Google SecOps webhook feeds
-  and similar HTTPS ingestion endpoints.
-- **Native OTLP** (`otlphttp/app`): all three signals to a standard OTLP/HTTP
-  base URL with an `Authorization` header.
+## ⚡ Quick start
 
-## Quick start (demo)
-
-Requires Docker. This runs the router, an HTTP echo server standing in for
-the webhook SIEM, a real OTLP collector standing in for the app backend, and
-generators that fire traces, metrics and logs at the router:
+**1. Watch it work (needs Docker only).** This runs the router plus stand-ins
+for both destinations and fires traces, metrics and logs at it:
 
 ```bash
 docker compose up
 ```
 
-Watch the output: `sink-app` logs all three signals arriving, `webhook-siem`
-logs JSON POSTs carrying the access-key header, and `gen-noauth` (which sends
-without a bearer token) is rejected with `Unauthenticated`. Ctrl-C to stop.
+In the output, `sink-app` receives all three signals, `webhook-siem` receives
+JSON log POSTs carrying the access-key headers, and `gen-noauth` (a sender
+without a token) is rejected with `Unauthenticated`.
 
-## Self-contained test
-
-Asserts everything the demo shows, then exits 0 or 1:
+**2. Assert it works.** Same stack, self-checking, exits 0 or 1:
 
 ```bash
 ./demo/test.sh
 ```
 
-Checks: the OTLP destination receives traces, metrics and logs; the webhook
-destination receives log records as JSON on its feed URL with the access-key
-header — and nothing else (no traces/metrics); a sender without the inbound
-bearer token is rejected.
-
-New to OpenTelemetry? [docs/USER_GUIDE.md](docs/USER_GUIDE.md) is a
-start-to-finish guide from zero — concepts, first run, secrets, exposure and
-operation. For the destination-specific production walkthrough — Claude Teams
-managed settings, Harmonic Security, and Google SecOps (webhook feed vs
-Bindplane) — see [docs/SETUP.md](docs/SETUP.md).
-
-## Sending sample traffic by hand
-
-`demo/send-sample.sh` posts one example trace, metric and log to the router
-with curl (OTLP/JSON), then greps the destination containers' Docker logs to
-confirm each arrived. Every run uses a unique marker, so a pass means *this*
-run's data landed:
+**3. Run it for real.** Copy the env template, fill in your endpoints and
+secrets, build and run:
 
 ```bash
-docker compose up -d
-./demo/send-sample.sh
-```
-
-It takes an endpoint and token, so the same script smoke-tests a deployed
-router — sending works from any machine with curl; the log verification is
-skipped when the demo stack isn't running locally:
-
-```bash
-./demo/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"
-```
-
-## Live test with real Claude Cowork telemetry
-
-`demo/cowork-live-test.sh` stands up the router and two inspectable local
-destinations, exposes the router publicly (ngrok, or your own `PUBLIC_URL`),
-proves the path with a synthetic log, then **waits for you to enter a prompt in
-Claude Cowork** and confirms the telemetry reached each configured destination:
-
-```bash
-./demo/cowork-live-test.sh
-```
-
-It prints the exact managed-settings to paste into Cowork, then reports
-PASS/FAIL per destination with the evidence. Knobs: `INBOUND_TOKEN` (reuse a
-token), `PUBLIC_URL` (skip ngrok), `WAIT_TIMEOUT` (default 300s).
-
-## Running against real destinations
-
-Supply your token and endpoints at runtime — nothing sensitive is baked into
-the image. Keep secrets out of your shell history and git by putting them in a
-gitignored `.env` file and loading it with `--env-file`:
-
-```bash
-cp .env.example .env      # then edit .env with your real values
+cp .env.example .env    # edit with your real values
 docker build -t otel-router .
-
 docker run -p 4317:4317 -p 4318:4318 --env-file .env otel-router
 ```
 
-`.env` holds `INBOUND_TOKEN`, `SIEM_ENDPOINT`, `SIEM_API_KEY`, `SIEM_SECRET`,
-`APP_ENDPOINT` and `APP_AUTH` (see [.env.example](.env.example)). For
-production, source these from a secret manager rather than a file on disk —
-see [docs/USER_GUIDE.md](docs/USER_GUIDE.md) chapter 7.
+Then point your senders at it with `Authorization: Bearer <INBOUND_TOKEN>`:
 
-Then point your services' OTLP exporters at the router, sending
-`Authorization: Bearer <INBOUND_TOKEN>`:
+| Protocol  | Endpoint               |
+|-----------|------------------------|
+| OTLP/gRPC | `http://<router>:4317` |
+| OTLP/HTTP | `http://<router>:4318` |
 
-| Protocol  | Endpoint                |
-|-----------|-------------------------|
-| OTLP/gRPC | `http://<router>:4317`  |
-| OTLP/HTTP | `http://<router>:4318`  |
+New to OpenTelemetry? [docs/USER_GUIDE.md](docs/USER_GUIDE.md) walks from zero
+to production. For vendor-specific steps (Claude Teams managed settings,
+Harmonic Security, Google SecOps) see [docs/SETUP.md](docs/SETUP.md).
 
-### Exposing it publicly
+## 🧭 How it works
 
-The router authenticates senders but serves **plaintext by default**, so raw
-telemetry and tokens would cross the internet in cleartext. If the endpoint is
-public, terminate TLS in front of it: a reverse proxy (Caddy, nginx), a cloud
-load balancer, or a platform that provides HTTPS (Cloud Run, Fly.io). Only
-expose 4318 (OTLP/HTTP) through the proxy unless you need gRPC. Rotate
-`INBOUND_TOKEN` like any credential; changing it is a container restart.
-
-### Serving TLS directly (optional)
-
-The router can also terminate TLS itself on both OTLP ports — useful when
-clients connect directly, or when your load balancer requires HTTPS targets
-(e.g. an ALB HTTPS target group; the ALB does not validate target
-certificates, so a self-signed certificate works there). Mount a PEM
-certificate and key into the container and set:
-
-```bash
-TLS_ENABLED=true
-TLS_CERT_FILE=/certs/tls.crt   # container paths
-TLS_KEY_FILE=/certs/tls.key
+```mermaid
+flowchart LR
+    S["Your services<br/>(one OTLP exporter each)"] -- "OTLP + bearer token<br/>:4317 gRPC / :4318 HTTP" --> R["otel-router<br/>auth · batch · fan-out"]
+    R -- "JSON + access-key headers<br/>logs only" --> SIEM["SIEM webhook feed<br/>(e.g. Google SecOps)"]
+    R -- "OTLP + auth header<br/>all signals" --> APP["App backend<br/>(e.g. Harmonic)"]
 ```
 
-Startup fails closed if `TLS_ENABLED=true` but either file is missing or
-unreadable. The health endpoint (`:13133`) stays plain HTTP for orchestrator
-probes (ECS/ALB health checks can use HTTP regardless of traffic protocol).
-See [.env.example](.env.example) for a self-signed certificate one-liner, and
-`demo/tls-test.sh` for a working end-to-end example.
+Every request must present the inbound bearer token; the Collector's
+`bearertokenauth` extension rejects everything else. Valid telemetry is
+batched, then fanned out per signal:
 
-### Example source: Claude Code telemetry
+| Signal  | SIEM webhook feed | App backend |
+|---------|:-----------------:|:-----------:|
+| Traces  |                   | ✅          |
+| Metrics |                   | ✅          |
+| Logs    | ✅                | ✅          |
+
+The two destination shapes cover most real backends:
+
+- **Webhook-style** (`otlphttp/siem`): logs posted as plain JSON to one fixed
+  URL with access-key headers. This is the shape of Google SecOps webhook
+  feeds and similar HTTPS ingestion endpoints.
+- **Native OTLP** (`otlphttp/app`): all three signals to a standard OTLP/HTTP
+  base URL with an `Authorization` header.
+
+Delivery behaviour: destinations are independent, so if one is down the other
+keeps receiving. Each exporter has an in-memory sending queue with retry and
+backoff; brief outages are absorbed, but data is not persisted across a router
+restart (add a `file_storage` extension to the sending queues if you need
+durability).
+
+## 🔧 Configuration
+
+Everything lives in [`config/otel-router.yaml`](config/otel-router.yaml).
+Secrets and endpoints arrive as environment variables at runtime; nothing
+sensitive is baked into the image, and startup fails closed if a required
+variable is missing.
+
+| Variable        | Required | Purpose                                              |
+|-----------------|----------|------------------------------------------------------|
+| `INBOUND_TOKEN` | yes      | Bearer token senders must present to this router     |
+| `SIEM_ENDPOINT` | yes      | Full webhook feed URL logs are posted to             |
+| `SIEM_API_KEY`  | yes      | Value of the `X-goog-api-key` header                 |
+| `SIEM_SECRET`   | yes      | Value of the `X-Webhook-Access-Key` header           |
+| `APP_ENDPOINT`  | yes      | OTLP/HTTP base URL of the app backend                |
+| `APP_AUTH`      | yes      | `Authorization` header value sent to the app backend |
+| `TLS_ENABLED`   | no       | `true` to serve TLS on both OTLP ports               |
+| `TLS_CERT_FILE` | no       | Container path to a PEM certificate (mounted)        |
+| `TLS_KEY_FILE`  | no       | Container path to the PEM private key (mounted)      |
+
+**Choosing which signals go where.** Each signal has its own pipeline; a
+destination receives a signal only if its exporter is listed there:
+
+```yaml
+pipelines:
+  traces:
+    exporters: [otlphttp/app]
+  metrics:
+    exporters: [otlphttp/app]
+  logs:
+    exporters: [otlphttp/siem, otlphttp/app]
+```
+
+**Swapping destination shapes.** Both exporters are `otlphttp`; the difference
+is configuration. If your SIEM gains a native OTLP endpoint, replace its
+`logs_endpoint`/`encoding`/`compression` lines with a plain `endpoint`. For
+vendor formats (Splunk HEC, Elastic, ...) the contrib image already ships the
+exporters, so swap the block wholesale.
+
+**Adding a third destination.** Copy one of the `otlphttp/*` exporter blocks
+under a new name, add its env vars, list it in the pipelines it should
+receive, rebuild.
+
+## 🔒 Security
+
+- **Inbound auth**: one shared bearer token, enforced on both ports by the
+  Collector itself. Senders without it get `Unauthenticated`. Rotate it like
+  any credential; changing it is a container restart.
+- **Transport**: plaintext by default, so terminate TLS in front (reverse
+  proxy, cloud load balancer, or a platform with built-in HTTPS) whenever the
+  endpoint leaves a private network. Expose only 4318 (OTLP/HTTP) unless a
+  sender needs gRPC.
+- **Native TLS (optional)**: the router can terminate TLS itself. Mount a PEM
+  cert and key, then set `TLS_ENABLED=true`, `TLS_CERT_FILE` and
+  `TLS_KEY_FILE`. This is useful for direct exposure or ALB HTTPS target
+  groups (a self-signed cert suffices there). Startup fails closed if the
+  files are missing or unreadable, and the health endpoint (`:13133`) stays
+  plain HTTP for orchestrator probes.
+- **Fail-closed startup**: the entrypoint refuses to boot with any required
+  secret unset, so the router can never silently forward unauthenticated.
+
+Full threat model and hardening notes: [docs/SECURITY.md](docs/SECURITY.md).
+
+## 🧪 Demos and tests
+
+| Script                      | What it proves                                                        |
+|-----------------------------|-----------------------------------------------------------------------|
+| `demo/test.sh`              | End-to-end: all signals delivered, headers correct, no-auth rejected  |
+| `demo/tls-test.sh`          | The TLS mode: certs served, plaintext refused, fail-closed startup    |
+| `demo/send-sample.sh`       | Sends one trace/metric/log by hand (also smoke-tests a deployed router) |
+| `demo/cowork-live-test.sh`  | Live run with real Claude Cowork telemetry through a public URL       |
+
+The flagship source, Claude Code telemetry, is enabled with:
 
 ```json
 {
@@ -164,73 +203,30 @@ See [.env.example](.env.example) for a self-signed certificate one-liner, and
 }
 ```
 
-Set these in Claude Code settings (or org-wide via managed settings for
-Teams/Enterprise). See
+Set these in Claude Code settings, or org-wide via managed settings for
+Teams/Enterprise. See
 [monitoring usage](https://code.claude.com/docs/en/monitoring-usage).
 
-## Configuration
+## 📚 Documentation
 
-Everything lives in [`config/otel-router.yaml`](config/otel-router.yaml).
+| Document                               | Read it when                                                     |
+|----------------------------------------|------------------------------------------------------------------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | You are new to OpenTelemetry: concepts to production, start to finish |
+| [docs/SETUP.md](docs/SETUP.md)         | You are wiring up Claude Teams, Harmonic Security or Google SecOps |
+| [docs/SECURITY.md](docs/SECURITY.md)   | You want the threat model, secret handling and hardening guidance |
 
-### Environment variables
-
-| Variable        | Purpose                                               |
-|-----------------|-------------------------------------------------------|
-| `INBOUND_TOKEN` | Bearer token senders must present to this router      |
-| `SIEM_ENDPOINT` | Full webhook feed URL logs are posted to              |
-| `SIEM_API_KEY`  | Value of the `X-goog-api-key` header                  |
-| `SIEM_SECRET`   | Value of the `X-Webhook-Access-Key` header            |
-| `APP_ENDPOINT`  | OTLP/HTTP base URL of the app backend                 |
-| `APP_AUTH`      | `Authorization` header value sent to the app backend  |
-
-If a destination authenticates with different header names, rename the keys
-under that exporter's `headers:` block in the config.
-
-### Choosing which signals go where
-
-Each signal (traces, metrics, logs) has its own pipeline in the config. A
-destination receives a signal only if its exporter is listed in that
-pipeline. By default the webhook feed gets logs only and the app backend
-gets everything; add or remove exporters per pipeline to change that:
-
-```yaml
-pipelines:
-  traces:
-    exporters: [otlphttp/app]
-  metrics:
-    exporters: [otlphttp/app]
-  logs:
-    exporters: [otlphttp/siem, otlphttp/app]
-```
-
-### Swapping destination shapes
-
-Both exporters are `otlphttp`; the difference is configuration. If the SIEM
-gains a native OTLP endpoint, replace its `logs_endpoint`/`encoding`/
-`compression` lines with a plain `endpoint`. For vendor-specific formats
-(Splunk HEC, Elastic, etc.) the contrib image already includes the
-exporters — swap the block wholesale.
-
-### Adding a third destination
-
-Copy one of the `otlphttp/*` exporter blocks under a new name, add its env
-vars, and list it in the pipelines it should receive. Rebuild the image.
-
-## Delivery behaviour
-
-- Destinations are independent: if one is down, the other keeps receiving.
-- Each exporter has an in-memory sending queue with retry and backoff; brief
-  destination outages are absorbed, but data is not persisted across a
-  router restart. If you need durability, add a `file_storage` extension to
-  the sending queues.
-
-## Layout
+## Project layout
 
 ```
-Dockerfile               pinned Collector (contrib) image + config
-config/otel-router.yaml  the router: one source, auth, two destinations
-docker-compose.yml       demo harness (router + webhook sink + OTLP sink + generators)
-demo/sink.yaml           OTLP destination used by the demo
-demo/test.sh             self-contained end-to-end test
-demo/send-sample.sh      curl-based sample traffic sender + delivery check
+Dockerfile                pinned Collector (contrib) image + busybox entrypoint layer
+entrypoint.sh             fail-closed startup checks, optional TLS wiring
+config/otel-router.yaml   the router: one source, auth, two destinations
+config/tls.yaml           TLS overlay merged in when TLS_ENABLED=true
+docker-compose.yml        demo harness (router + both sinks + traffic generators)
+demo/                     end-to-end tests, sample sender, live Cowork test
+docs/                     user guide, vendor setup, security notes
 ```
+
+## License
+
+[MIT](LICENSE)
