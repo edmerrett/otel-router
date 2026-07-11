@@ -1,0 +1,36 @@
+# Live-test topology: the router plus two inspectable local stand-ins for your
+# real destinations, and NO synthetic generators — the telemetry comes from
+# Claude Cowork via the public tunnel. Used by demo/cowork-live-test.sh.
+#
+#   app-otlp      native OTLP receiver (all signals) -> stands in for the app backend
+#   siem-webhook  HTTP echo (logs only, JSON)        -> stands in for the SIEM feed
+#
+# INBOUND_TOKEN is supplied by the calling script via the environment.
+
+services:
+  router:
+    build:
+      context: ..
+    environment:
+      INBOUND_TOKEN: ${INBOUND_TOKEN}
+      SIEM_ENDPOINT: http://siem-webhook:8080/v1/ingest
+      SIEM_API_KEY: live-api-key
+      SIEM_SECRET: live-secret
+      APP_ENDPOINT: http://app-otlp:4318
+      APP_AUTH: Bearer live-app-token
+    ports:
+      - "4318:4318"
+    depends_on:
+      - siem-webhook
+      - app-otlp
+
+  # Prints every request (method, path, headers, body) to stdout.
+  siem-webhook:
+    image: mendhak/http-https-echo@sha256:f55000d9196bd3c853d384af7315f509d21ffb85de315c26e9874033b9f83e15
+
+  # Real OTLP collector; prints received telemetry in detail.
+  app-otlp:
+    image: otel/opentelemetry-collector@sha256:0beba82d63792511591522a8d582904b9a8ae81710357bfcab731607b8b0ffe2
+    command: ["--config=/etc/otelcol/sink.yaml"]
+    volumes:
+      - ./sink.yaml:/etc/otelcol/sink.yaml:ro

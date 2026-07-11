@@ -79,6 +79,21 @@ skipped when the demo stack isn't running locally:
 ./demo/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"
 ```
 
+## Live test with real Claude Cowork telemetry
+
+`demo/cowork-live-test.sh` stands up the router and two inspectable local
+destinations, exposes the router publicly (ngrok, or your own `PUBLIC_URL`),
+proves the path with a synthetic log, then **waits for you to enter a prompt in
+Claude Cowork** and confirms the telemetry reached each configured destination:
+
+```bash
+./demo/cowork-live-test.sh
+```
+
+It prints the exact managed-settings to paste into Cowork, then reports
+PASS/FAIL per destination with the evidence. Knobs: `INBOUND_TOKEN` (reuse a
+token), `PUBLIC_URL` (skip ngrok), `WAIT_TIMEOUT` (default 300s).
+
 ## Running against real destinations
 
 Supply your token and endpoints at runtime — nothing sensitive is baked into
