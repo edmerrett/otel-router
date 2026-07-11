@@ -246,6 +246,8 @@ exporters:
       X-Webhook-Access-Key: ${env:WEBHOOK_SECRET}
   otlphttp/backend:                    # example destination: native OTLP
     endpoint: ${env:BACKEND_ENDPOINT}
+    encoding: json                     # some backends require this; see note below
+    compression: none                  # ...and this
     headers:
       Authorization: ${env:BACKEND_AUTH}
 
@@ -257,7 +259,7 @@ service:
 ```
 
 The pipelines here reference the `otlp` receiver and `batch` processor from
-`base.yaml`; the merge makes them one config. Three things to notice, because
+`base.yaml`; the merge makes them one config. Four things to notice, because
 you will change them later:
 
 - **Add or remove a destination** by adding or deleting an exporter block and
@@ -268,6 +270,14 @@ you will change them later:
 - **The `pipelines` block decides who gets what.** `logs` lists both example
   exporters, so both receive logs. `traces` and `metrics` list only
   `otlphttp/backend`, so the webhook destination never sees them.
+- **A destination dictates its wire format.** An OTLP/HTTP exporter defaults to
+  **protobuf, gzip-compressed** — smaller and faster, and what most backends
+  want. Some destinations only accept **OTLP/JSON, uncompressed** and reject the
+  default; for those, set `encoding: json` and `compression: none` on that
+  exporter (as shown above). The symptom of getting this wrong is telemetry that
+  leaves the sender with a `200` but never lands: the router accepts it, then the
+  destination rejects the forwarded request with **`415`** (wrong encoding) or
+  **`400`** (won't accept gzip). See Chapter 13.
 
 ---
 
@@ -612,7 +622,7 @@ queues.
 | Sender gets `401 Unauthenticated`         | Token mismatch or malformed header. Value must be `Bearer <token>`, `=` not `:` in Claude's `OTEL_EXPORTER_OTLP_HEADERS`, no stray spaces. |
 | Sender gets `400` with a JSON parse error | The request body is malformed JSON, not an auth or transport problem. The request reached the router fine. |
 | Sender gets `404`                         | A path was appended to the endpoint. Give the **base** URL; the exporter adds `/v1/...`. |
-| `200`s but nothing at the destination     | Wrong destination endpoint, destination rejecting the payload, or a test endpoint (e.g. webhook.site) hit its request cap. |
+| `200`s but nothing at the destination     | The router accepted the data but the destination rejected the forwarded request. `docker logs otel-router` shows the real status. **`415`** → the destination wants OTLP/JSON: set `encoding: json` on that exporter. **`400`** on valid data → it won't accept gzip: set `compression: none`. Some backends need both. Otherwise: wrong endpoint, or a test endpoint (e.g. webhook.site) hit its request cap. |
 | Router container exits immediately        | A required env var is unset. `docker logs otel-router` names the missing `${env:...}`. Check your `.env`/`--env-file`. |
 | Nothing appears from Claude Cowork        | Cowork telemetry export is not documented by Anthropic and may not emit. Run a plain `claude` CLI session as a control; if the CLI works and Cowork does not, the source is the gap, not your router. |
 | ngrok URL stopped working                 | The free URL changes on every restart. Update the sender to the new URL.             |
