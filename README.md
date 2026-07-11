@@ -122,12 +122,32 @@ Then point your services' OTLP exporters at the router, sending
 
 ### Exposing it publicly
 
-The router authenticates senders but ships **without TLS**, so raw telemetry
-and tokens would cross the internet in cleartext. If the endpoint is
+The router authenticates senders but serves **plaintext by default**, so raw
+telemetry and tokens would cross the internet in cleartext. If the endpoint is
 public, terminate TLS in front of it: a reverse proxy (Caddy, nginx), a cloud
 load balancer, or a platform that provides HTTPS (Cloud Run, Fly.io). Only
 expose 4318 (OTLP/HTTP) through the proxy unless you need gRPC. Rotate
 `INBOUND_TOKEN` like any credential; changing it is a container restart.
+
+### Serving TLS directly (optional)
+
+The router can also terminate TLS itself on both OTLP ports — useful when
+clients connect directly, or when your load balancer requires HTTPS targets
+(e.g. an ALB HTTPS target group; the ALB does not validate target
+certificates, so a self-signed certificate works there). Mount a PEM
+certificate and key into the container and set:
+
+```bash
+TLS_ENABLED=true
+TLS_CERT_FILE=/certs/tls.crt   # container paths
+TLS_KEY_FILE=/certs/tls.key
+```
+
+Startup fails closed if `TLS_ENABLED=true` but either file is missing or
+unreadable. The health endpoint (`:13133`) stays plain HTTP for orchestrator
+probes (ECS/ALB health checks can use HTTP regardless of traffic protocol).
+See [.env.example](.env.example) for a self-signed certificate one-liner, and
+`demo/tls-test.sh` for a working end-to-end example.
 
 ### Example source: Claude Code telemetry
 

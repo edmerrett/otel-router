@@ -318,9 +318,10 @@ without TLS.** The `Authorization` header and the raw telemetry travel in the
 request. Over plain HTTP they are readable by anyone on the path. So:
 
 - `SIEM_ENDPOINT` and `APP_ENDPOINT` must be `https://` URLs in production.
-- The router itself does not terminate TLS. When you expose it (Chapter 9),
-  something in front of it must provide HTTPS. ngrok does this for testing; a
-  load balancer or reverse proxy does it in production.
+- The router serves plaintext by default. When you expose it (Chapter 9),
+  either something in front of it provides HTTPS (ngrok for testing; a load
+  balancer or reverse proxy in production), or you enable the router's own
+  TLS mode (`TLS_ENABLED=true` plus a mounted cert/key — see Chapter 9).
 
 **Rule 6 — rotate on a schedule, and immediately if a secret may have leaked.**
 Rotation is covered in Chapter 12. The short version: generate a new value,
@@ -434,6 +435,26 @@ HTTPS in front of it:
 Expose only port **4318** (OTLP/HTTP) publicly unless a sender specifically
 needs gRPC. Everything from Chapter 7 Rule 5 applies: no TLS, no public
 exposure.
+
+### Alternative: let the router terminate TLS itself
+
+If nothing in front of the router can provide HTTPS — or your load balancer
+wants HTTPS targets (an AWS ALB with an HTTPS target group, for example) —
+enable the router's built-in TLS instead:
+
+```bash
+TLS_ENABLED=true
+TLS_CERT_FILE=/certs/tls.crt   # container paths; mount the PEM files in
+TLS_KEY_FILE=/certs/tls.key
+```
+
+Both OTLP ports then serve TLS, and startup fails closed if the cert or key
+is missing. Behind an ALB HTTPS target group a self-signed certificate is
+sufficient (the ALB does not validate target certificates); for direct client
+exposure use a certificate the clients trust. `.env.example` has a
+self-signed generation one-liner, and `demo/tls-test.sh` shows the whole
+thing working end to end. The health port (13133) stays plain HTTP, so ECS
+and ALB health checks keep working unchanged.
 
 ---
 
