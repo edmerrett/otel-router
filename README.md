@@ -1,8 +1,8 @@
 # Otel-router
 
 A lightweight container that receives OpenTelemetry (OTLP) data on a single
-authenticated endpoint and fans it out to two destinations: your SIEM and
-your application observability backend.
+authenticated endpoint and fans it out to two destinations: a webhook-style
+SIEM feed and a native OTLP observability backend.
 
 Services can usually only export OTLP to one place. Point them all here
 instead, and this router duplicates the stream to every configured
@@ -13,28 +13,32 @@ production-grade batching, retries and queueing for free.
 
 ```
                              ┌──────────────┐
- your services ──OTLP+auth──▶│  otel-router │──OTLP+auth──▶ SIEM
- (one endpoint)              │  :4317/:4318 │──OTLP+auth──▶ app backend
+ your services ──OTLP+auth──▶│  otel-router │──JSON+key──▶ SIEM (webhook, logs)
+ (one endpoint)              │  :4317/:4318 │──OTLP+auth──▶ app backend (all signals)
                              └──────────────┘
 ```
 
+The two destination shapes cover most real backends:
+
+- **Webhook-style** (`otlphttp/siem`): logs posted as plain JSON to one fixed
+  URL with an access-key header — the shape of Google SecOps webhook feeds
+  and similar HTTPS ingestion endpoints.
+- **Native OTLP** (`otlphttp/app`): all three signals to a standard OTLP/HTTP
+  base URL with an `Authorization` header.
+
 ## Quick start (demo)
 
-Requires Docker. This runs the router, two dummy OTLP sinks standing in for
-your SIEM and app backend, and generators that fire traces, metrics and logs
-at the router:
+Requires Docker. This runs the router, an HTTP echo server standing in for
+the webhook SIEM, a real OTLP collector standing in for the app backend, and
+generators that fire traces, metrics and logs at the router:
 
 ```bash
 docker compose up
 ```
 
-Watch the output: the same telemetry appears in the logs of **both**
-`sink-siem` and `sink-app`, while `gen-noauth` (which sends without a bearer
-token) is rejected with `Unauthenticated`. Ctrl-C to stop.
-
-The demo mirrors a real deployment's topology: generators sit on a `sources`
-network, sinks on a `destinations` network, and the router is the only
-container on both, so telemetry cannot reach the sinks except through it.
+Watch the output: `sink-app` logs all three signals arriving, `webhook-siem`
+logs JSON POSTs carrying the access-key header, and `gen-noauth` (which sends
+without a bearer token) is rejected with `Unauthenticated`. Ctrl-C to stop.
 
 ## Self-contained test
 
@@ -44,9 +48,10 @@ Asserts everything the demo shows, then exits 0 or 1:
 ./demo/test.sh
 ```
 
-Checks: both sinks receive traces, metrics and logs; a sender without the
-bearer token is rejected; and the sinks are unreachable from the source
-network (the sink hostname does not even resolve there).
+Checks: the OTLP destination receives traces, metrics and logs; the webhook
+destination receives log records as JSON on its feed URL with the access-key
+header — and nothing else (no traces/metrics); a sender without the inbound
+bearer token is rejected.
 
 ## Running against real destinations
 
@@ -58,8 +63,8 @@ docker build -t otel-router .
 
 docker run -p 4317:4317 -p 4318:4318 \
   -e INBOUND_TOKEN="$(openssl rand -hex 32)" \
-  -e SIEM_ENDPOINT=https://siem.example.com:4318 \
-  -e SIEM_AUTH="Bearer $SIEM_TOKEN" \
+  -e SIEM_ENDPOINT=https://siem.example.com/v1/ingest \
+  -e SIEM_AUTH="$SIEM_ACCESS_KEY" \
   -e APP_ENDPOINT=https://o11y.example.com:4318 \
   -e APP_AUTH="Bearer $APP_TOKEN" \
   otel-router
@@ -107,23 +112,23 @@ Everything lives in [`config/otel-router.yaml`](config/otel-router.yaml).
 
 ### Environment variables
 
-| Variable        | Purpose                                              |
-|-----------------|------------------------------------------------------|
-| `INBOUND_TOKEN` | Bearer token senders must present to this router     |
-| `SIEM_ENDPOINT` | OTLP/HTTP base URL of the SIEM                       |
-| `SIEM_AUTH`     | `Authorization` header value sent to the SIEM        |
-| `APP_ENDPOINT`  | OTLP/HTTP base URL of the app backend                |
-| `APP_AUTH`      | `Authorization` header value sent to the app backend |
+| Variable        | Purpose                                               |
+|-----------------|-------------------------------------------------------|
+| `INBOUND_TOKEN` | Bearer token senders must present to this router      |
+| `SIEM_ENDPOINT` | Full webhook feed URL logs are posted to              |
+| `SIEM_AUTH`     | Value of the `X-Webhook-Access-Key` header            |
+| `APP_ENDPOINT`  | OTLP/HTTP base URL of the app backend                 |
+| `APP_AUTH`      | `Authorization` header value sent to the app backend  |
 
-If a destination authenticates with a different header (e.g. `api-key`),
-rename the key under that exporter's `headers:` block in the config.
+If a destination authenticates with different header names, rename the keys
+under that exporter's `headers:` block in the config.
 
 ### Choosing which signals go where
 
 Each signal (traces, metrics, logs) has its own pipeline in the config. A
 destination receives a signal only if its exporter is listed in that
-pipeline. For example, to send logs to both but keep traces and metrics out
-of the SIEM:
+pipeline. By default the webhook feed gets logs only and the app backend
+gets everything; add or remove exporters per pipeline to change that:
 
 ```yaml
 pipelines:
@@ -135,17 +140,18 @@ pipelines:
     exporters: [otlphttp/siem, otlphttp/app]
 ```
 
+### Swapping destination shapes
+
+Both exporters are `otlphttp`; the difference is configuration. If the SIEM
+gains a native OTLP endpoint, replace its `logs_endpoint`/`encoding`/
+`compression` lines with a plain `endpoint`. For vendor-specific formats
+(Splunk HEC, Elastic, etc.) the contrib image already includes the
+exporters — swap the block wholesale.
+
 ### Adding a third destination
 
 Copy one of the `otlphttp/*` exporter blocks under a new name, add its env
 vars, and list it in the pipelines it should receive. Rebuild the image.
-
-### Non-OTLP destinations
-
-If a destination needs a vendor-specific format or a fixed ingestion URL,
-the contrib image already includes the exporters: swap the `otlphttp` block
-for the vendor one (Splunk HEC, Elastic, etc.), or use `otlphttp`'s
-`logs_endpoint` + `encoding: json` to post to an HTTPS ingestion feed.
 
 ## Delivery behaviour
 
@@ -160,7 +166,7 @@ for the vendor one (Splunk HEC, Elastic, etc.), or use `otlphttp`'s
 ```
 Dockerfile               pinned Collector (contrib) image + config
 config/otel-router.yaml  the router: one source, auth, two destinations
-docker-compose.yml       demo harness (router + 2 sinks + generators)
-demo/sink.yaml           dummy destination used by the demo
+docker-compose.yml       demo harness (router + webhook sink + OTLP sink + generators)
+demo/sink.yaml           OTLP destination used by the demo
 demo/test.sh             self-contained end-to-end test
 ```

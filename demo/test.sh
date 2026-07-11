@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Self-contained end-to-end test. Builds the router, runs the demo stack,
-# and asserts: fan-out to both sinks for all three signals, rejection of
-# unauthenticated senders, and that sinks are unreachable from the source
-# network except through the router. Exit 0 = all checks passed.
+# and asserts: all signals reach the OTLP destination, logs reach the
+# webhook-style destination as JSON with the access-key header, and senders
+# without the inbound bearer token are rejected. Exit 0 = all checks passed.
 set -u
 cd "$(dirname "$0")/.."
 
@@ -16,22 +16,24 @@ docker compose down --remove-orphans >/dev/null 2>&1
 docker compose up -d --build --quiet-pull >/dev/null 2>&1 || { echo "FAIL  stack failed to start"; exit 1; }
 docker compose wait gen-traces gen-metrics gen-logs gen-noauth >/dev/null 2>&1
 
-for s in sink-siem sink-app; do
-  logs=$(docker compose logs "$s" 2>&1)
-  for sig in traces metrics logs; do
-    echo "$logs" | grep -q "\"otelcol.signal\": \"$sig\""
-    check $? "$s received $sig"
-  done
+app=$(docker compose logs sink-app 2>&1)
+for sig in traces metrics logs; do
+  echo "$app" | grep -q "\"otelcol.signal\": \"$sig\""
+  check $? "OTLP destination (sink-app) received $sig"
 done
+
+hook=$(docker compose logs webhook-siem 2>&1)
+echo "$hook" | grep -q '"path": "/v1/ingest"'
+check $? "webhook destination received POST on its feed URL"
+echo "$hook" | grep -q '"x-webhook-access-key": "demo-webhook-key"'
+check $? "webhook destination received the access-key header"
+echo "$hook" | grep -q 'resourceLogs'
+check $? "webhook destination received log records as JSON"
+echo "$hook" | grep -qE 'resourceSpans|resourceMetrics'
+check $((1 - $?)) "webhook destination received logs ONLY (no traces/metrics)"
 
 docker compose logs gen-noauth 2>&1 | grep -q "Unauthenticated"
 check $? "sender without bearer token rejected"
-
-# From the sources network, the sinks must not even resolve.
-out=$(docker compose run --rm --no-deps gen-noauth traces \
-      --otlp-endpoint sink-siem:4317 --otlp-insecure --duration 2s 2>&1)
-echo "$out" | grep -qiE "no such host|produced zero addresses"
-check $? "sinks unreachable from source network (router is the only path)"
 
 docker compose down >/dev/null 2>&1
 

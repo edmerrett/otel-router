@@ -3,16 +3,21 @@
 # Point your services at this container (gRPC :4317 or HTTP :4318). Senders
 # must present "Authorization: Bearer $INBOUND_TOKEN".
 #
+# The two destinations deliberately have different shapes:
+#   siem  webhook-style HTTPS feed (e.g. Google SecOps): logs only, posted
+#         as plain JSON to a fixed URL with an access-key header
+#   app   native OTLP backend (e.g. an observability platform): all signals
+#
 # All endpoints and secrets come from environment variables at runtime:
 #
 #   INBOUND_TOKEN   bearer token senders must present to this router
-#   SIEM_ENDPOINT   e.g. https://siem.example.com:4318
-#   SIEM_AUTH       value for the Authorization header, e.g. "Bearer <token>"
-#   APP_ENDPOINT    e.g. https://o11y.example.com:4318
-#   APP_AUTH        value for the Authorization header
+#   SIEM_ENDPOINT   full webhook feed URL, e.g. https://siem.example.com/v1/ingest
+#   SIEM_AUTH       access-key value for the X-Webhook-Access-Key header
+#   APP_ENDPOINT    OTLP/HTTP base URL, e.g. https://o11y.example.com:4318
+#   APP_AUTH        value for the Authorization header, e.g. "Bearer <token>"
 #
-# If a destination uses a different auth header (e.g. api-key), rename the
-# header key under that exporter's `headers:` block.
+# If a destination uses different auth header names, rename the keys under
+# that exporter's `headers:` block.
 
 extensions:
   # Rejects any inbound request without the expected bearer token.
@@ -36,15 +41,20 @@ processors:
   batch: {}
 
 exporters:
+  # Webhook-style: plain JSON to one fixed URL. Webhook feeds rarely accept
+  # gzip, hence compression: none.
   otlphttp/siem:
-    endpoint: ${env:SIEM_ENDPOINT}
+    logs_endpoint: ${env:SIEM_ENDPOINT}
+    encoding: json
+    compression: none
     headers:
-      Authorization: ${env:SIEM_AUTH}
+      X-Webhook-Access-Key: ${env:SIEM_AUTH}
     retry_on_failure:
       enabled: true
     sending_queue:
       enabled: true
 
+  # Native OTLP: standard /v1/{traces,metrics,logs} paths under one base URL.
   otlphttp/app:
     endpoint: ${env:APP_ENDPOINT}
     headers:
@@ -57,17 +67,17 @@ exporters:
 service:
   extensions: [bearertokenauth/inbound]
   # Per-destination signal selection: a destination receives a signal only if
-  # its exporter is listed in that signal's pipeline. To stop (say) metrics
-  # going to the SIEM, remove otlphttp/siem from the metrics pipeline below.
+  # its exporter is listed in that signal's pipeline. The webhook feed takes
+  # logs only; add otlphttp/siem to other pipelines if that ever changes.
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/siem, otlphttp/app]
+      exporters: [otlphttp/app]
     metrics:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/siem, otlphttp/app]
+      exporters: [otlphttp/app]
     logs:
       receivers: [otlp]
       processors: [batch]
