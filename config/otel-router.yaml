@@ -1,0 +1,74 @@
+# Otel-router: receive OTLP once, fan out to two destinations.
+#
+# Point your services at this container (gRPC :4317 or HTTP :4318). Senders
+# must present "Authorization: Bearer $INBOUND_TOKEN".
+#
+# All endpoints and secrets come from environment variables at runtime:
+#
+#   INBOUND_TOKEN   bearer token senders must present to this router
+#   SIEM_ENDPOINT   e.g. https://siem.example.com:4318
+#   SIEM_AUTH       value for the Authorization header, e.g. "Bearer <token>"
+#   APP_ENDPOINT    e.g. https://o11y.example.com:4318
+#   APP_AUTH        value for the Authorization header
+#
+# If a destination uses a different auth header (e.g. api-key), rename the
+# header key under that exporter's `headers:` block.
+
+extensions:
+  # Rejects any inbound request without the expected bearer token.
+  bearertokenauth/inbound:
+    token: ${env:INBOUND_TOKEN}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth/inbound
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/inbound
+
+processors:
+  # Batches telemetry before export; protects destinations from request storms.
+  batch: {}
+
+exporters:
+  otlphttp/siem:
+    endpoint: ${env:SIEM_ENDPOINT}
+    headers:
+      Authorization: ${env:SIEM_AUTH}
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: true
+
+  otlphttp/app:
+    endpoint: ${env:APP_ENDPOINT}
+    headers:
+      Authorization: ${env:APP_AUTH}
+    retry_on_failure:
+      enabled: true
+    sending_queue:
+      enabled: true
+
+service:
+  extensions: [bearertokenauth/inbound]
+  # Per-destination signal selection: a destination receives a signal only if
+  # its exporter is listed in that signal's pipeline. To stop (say) metrics
+  # going to the SIEM, remove otlphttp/siem from the metrics pipeline below.
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/siem, otlphttp/app]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/siem, otlphttp/app]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/siem, otlphttp/app]

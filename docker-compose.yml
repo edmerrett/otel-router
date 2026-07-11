@@ -1,0 +1,64 @@
+# Demo harness: the router plus two dummy OTLP sinks standing in for your
+# SIEM and app backend, and generators that fire traces/metrics/logs at the
+# router. Run `docker compose up`; the same telemetry appears in the logs of
+# BOTH sink-siem and sink-app, while gen-noauth (no bearer token) is rejected.
+
+services:
+  router:
+    build: .
+    environment:
+      INBOUND_TOKEN: demo-inbound-token
+      SIEM_ENDPOINT: http://sink-siem:4318
+      SIEM_AUTH: Bearer demo-siem-token
+      APP_ENDPOINT: http://sink-app:4318
+      APP_AUTH: Bearer demo-app-token
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - sink-siem
+      - sink-app
+
+  sink-siem:
+    image: otel/opentelemetry-collector:0.156.0
+    command: ["--config=/etc/otelcol/sink.yaml"]
+    volumes:
+      - ./demo/sink.yaml:/etc/otelcol/sink.yaml:ro
+
+  sink-app:
+    image: otel/opentelemetry-collector:0.156.0
+    command: ["--config=/etc/otelcol/sink.yaml"]
+    volumes:
+      - ./demo/sink.yaml:/etc/otelcol/sink.yaml:ro
+
+  gen-traces:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    command: ["traces", "--otlp-endpoint", "router:4317", "--otlp-insecure",
+              "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
+              "--duration", "5s"]
+    depends_on:
+      - router
+
+  gen-metrics:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    command: ["metrics", "--otlp-endpoint", "router:4317", "--otlp-insecure",
+              "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
+              "--duration", "5s"]
+    depends_on:
+      - router
+
+  gen-logs:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    command: ["logs", "--otlp-endpoint", "router:4317", "--otlp-insecure",
+              "--otlp-header", 'Authorization="Bearer demo-inbound-token"',
+              "--duration", "5s"]
+    depends_on:
+      - router
+
+  # Deliberately sends without a token; the router must reject it.
+  gen-noauth:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+    command: ["traces", "--otlp-endpoint", "router:4317", "--otlp-insecure",
+              "--duration", "2s"]
+    depends_on:
+      - router
