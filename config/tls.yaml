@@ -2,8 +2,8 @@
 #
 # The collector merges every --config flag it receives (maps merge key by
 # key), so this file adds only the `tls:` blocks; endpoints and auth come
-# from the base config/otel-router.yaml. entrypoint.sh appends this file as
-# a second --config flag when TLS_ENABLED is set — never pass it alone.
+# from base.yaml and destinations.yaml. entrypoint.sh appends this file as
+# a second --config flag when TLS_ENABLED is set. Never pass it alone.
 #
 # TLS_CERT_FILE / TLS_KEY_FILE are container paths to a PEM certificate and
 # key (mount them in). Both OTLP ports (4317 gRPC, 4318 HTTP) then require

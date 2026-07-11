@@ -32,13 +32,13 @@ compose down --remove-orphans >/dev/null 2>&1
 compose up -d --build --quiet-pull >/dev/null 2>&1 || { echo "FAIL  stack failed to start"; exit 1; }
 compose wait gen-traces gen-metrics gen-logs gen-noauth >/dev/null 2>&1
 
-app=$(compose logs sink-app 2>&1)
+app=$(compose logs sink-backend 2>&1)
 for sig in traces metrics logs; do
   echo "$app" | grep -q "\"otelcol.signal\": \"$sig\""
-  check $? "OTLP destination (sink-app) received $sig over TLS"
+  check $? "OTLP destination (sink-backend) received $sig over TLS"
 done
 
-hook=$(compose logs webhook-siem 2>&1)
+hook=$(compose logs sink-webhook 2>&1)
 echo "$hook" | grep -q 'resourceLogs'
 check $? "webhook destination received log records"
 

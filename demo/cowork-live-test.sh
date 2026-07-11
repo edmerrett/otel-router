@@ -6,7 +6,7 @@
 # then WAITS for you to enter a prompt in Claude Cowork and confirms the
 # resulting telemetry reached each configured destination.
 #
-#   1. builds and starts router + app-otlp (native OTLP) + siem-webhook (JSON)
+#   1. builds and starts router + sink-backend (native OTLP) + sink-webhook (JSON)
 #   2. gets a public URL (ngrok, or your own via PUBLIC_URL=...)
 #   3. self-test: sends one synthetic log through the public URL, checks both
 #      destinations received it (proves the pipe before involving Cowork)
@@ -77,8 +77,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$ENDPOINT/v1/logs" \
   -d "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"selftest\"}}]},\"scopeLogs\":[{\"logRecords\":[{\"body\":{\"stringValue\":\"$SELF\"}}]}]}]}")
 check "$([ "$code" = "200" ]; echo $?)" "public URL accepted the log (HTTP $code)"
 sleep 3
-$COMPOSE logs app-otlp     2>&1 | grep -q "$SELF"; check $? "synthetic log reached app-otlp (native OTLP)"
-$COMPOSE logs siem-webhook 2>&1 | grep -q "$SELF"; check $? "synthetic log reached siem-webhook (JSON feed)"
+$COMPOSE logs sink-backend     2>&1 | grep -q "$SELF"; check $? "synthetic log reached sink-backend (native OTLP)"
+$COMPOSE logs sink-webhook 2>&1 | grep -q "$SELF"; check $? "synthetic log reached sink-webhook (JSON feed)"
 if [ "$code" != "200" ]; then
   echo "Public path is not working; fix that before testing Cowork. See docs/USER_GUIDE.md ch.13."
   exit 1
@@ -113,8 +113,8 @@ EOF
 app_seen=1; siem_seen=1
 deadline=$((SECONDS + WAIT_TIMEOUT))
 while [ $SECONDS -lt $deadline ]; do
-  $COMPOSE logs app-otlp     2>&1 | grep -qi 'claude' && app_seen=0
-  $COMPOSE logs siem-webhook 2>&1 | grep -qi 'claude' && siem_seen=0
+  $COMPOSE logs sink-backend     2>&1 | grep -qi 'claude' && app_seen=0
+  $COMPOSE logs sink-webhook 2>&1 | grep -qi 'claude' && siem_seen=0
   [ $((app_seen + siem_seen)) -eq 0 ] && break
   printf '\r  waiting... %ss left   ' "$((deadline - SECONDS))"
   sleep 3
@@ -123,8 +123,8 @@ echo
 
 # --- 5. report ---------------------------------------------------------------
 say "Result"
-check $app_seen  "Claude telemetry reached app-otlp (native OTLP, all signals)"
-check $siem_seen "Claude telemetry reached siem-webhook (logs only, JSON)"
+check $app_seen  "Claude telemetry reached sink-backend (native OTLP, all signals)"
+check $siem_seen "Claude telemetry reached sink-webhook (logs only, JSON)"
 
 if [ $((app_seen + siem_seen)) -ne 0 ]; then
   echo
@@ -137,7 +137,7 @@ fi
 
 echo
 echo "Evidence (most recent Claude log at each destination):"
-echo "-- app-otlp --";     $COMPOSE logs app-otlp     2>&1 | grep -i 'claude' | tail -1
-echo "-- siem-webhook --"; $COMPOSE logs siem-webhook 2>&1 | grep -i 'claude' | tail -1
+echo "-- sink-backend --";     $COMPOSE logs sink-backend     2>&1 | grep -i 'claude' | tail -1
+echo "-- sink-webhook --"; $COMPOSE logs sink-webhook 2>&1 | grep -i 'claude' | tail -1
 echo
 echo "PASS: Cowork telemetry fanned out to both configured destinations."

@@ -8,21 +8,21 @@ which covers the day-to-day handling.
 
 | Direction | Mechanism | Failure mode |
 |-----------|-----------|--------------|
-| Inbound (senders → router)   | `Authorization: Bearer <INBOUND_TOKEN>`, checked by the `bearertokenauth` extension | **Fails closed** — the router refuses to start if `INBOUND_TOKEN` is unset, and rejects any request without the exact token. |
-| Outbound (router → SIEM)      | `X-goog-api-key` + `X-Webhook-Access-Key` headers | **Fails closed at startup** — the entrypoint refuses to start if either is unset. |
-| Outbound (router → app backend) | `Authorization` header (`APP_AUTH`) | **Fails closed at startup** — the entrypoint refuses to start if unset. |
+| Inbound (senders to router)   | `Authorization: Bearer <INBOUND_TOKEN>`, checked by the `bearertokenauth` extension | **Fails closed.** The router refuses to start if `INBOUND_TOKEN` is unset, and rejects any request without the exact token. |
+| Outbound (router to a destination) | Whatever headers that destination's exporter defines in `destinations.yaml`, e.g. an `Authorization` or access-key header | **Fails closed only if you opt in.** List the destination's variables in `REQUIRE_ENV` and the entrypoint refuses to start if any is unset. |
 
-The startup guard lives in [`entrypoint.sh`](../entrypoint.sh): it verifies
-every required endpoint and credential is non-empty before launching the
-collector. This exists because the collector on its own would boot with an
-empty header and forward telemetry to a destination unauthenticated. With the
-guard, a misconfigured deploy stops loudly instead of leaking quietly.
+The startup guard lives in [`entrypoint.sh`](../entrypoint.sh). It always
+verifies `INBOUND_TOKEN` is set, since an empty inbound token would leave the
+router accepting unauthenticated telemetry. Destinations are user-defined, so
+the guard cannot know which outbound variables matter; name the ones you cannot
+run without in `REQUIRE_ENV` (space-separated) to extend the same discipline to
+them. A misconfigured deploy then stops loudly instead of leaking quietly.
 
 ## Where secrets live
 
 Every credential is supplied at runtime as an environment variable and
 referenced in the config as `${env:...}`. Nothing sensitive is written into
-`config/otel-router.yaml` or baked into the image.
+`config/destinations.yaml` or baked into the image.
 
 - **Local / testing:** a gitignored `.env` file loaded with `--env-file`. See
   [`.env.example`](../.env.example). `.env` is excluded by
@@ -47,8 +47,8 @@ By default the router speaks plain HTTP, so:
   or key is missing/unreadable, the router refuses to start rather than
   silently falling back to plaintext. The health port (13133) remains plain
   HTTP for liveness probes.
-- **Destination endpoints must be `https://`.** An `http://` `APP_ENDPOINT` or
-  `SIEM_ENDPOINT` would leak that destination's credential in the request.
+- **Destination endpoints must be `https://`.** An `http://` `BACKEND_ENDPOINT` or
+  `WEBHOOK_ENDPOINT` would leak that destination's credential in the request.
 
 ## Known limitation: one shared static token
 

@@ -13,17 +13,21 @@ FROM otel/opentelemetry-collector-contrib@sha256:125bdbeb7590cc1952c5b3430ecf140
 USER 0
 COPY --from=busybox --chmod=0755 /bin/busybox /bin/busybox
 COPY --chmod=0755 entrypoint.sh /entrypoint.sh
-COPY config/otel-router.yaml /etc/otelcol-contrib/config.yaml
+COPY config/base.yaml /etc/otelcol-contrib/base.yaml
+COPY config/destinations.yaml /etc/otelcol-contrib/destinations.yaml
 COPY config/tls.yaml /etc/otelcol-contrib/tls.yaml
 USER 10001
 
 EXPOSE 4317 4318 13133
 
-# entrypoint.sh fails closed if a required secret/endpoint is missing, then
-# execs the collector with the args from CMD. Run via busybox sh since the
-# base image ships no shell.
+# entrypoint.sh fails closed if INBOUND_TOKEN (or anything in REQUIRE_ENV) is
+# missing, then execs the collector with the args from CMD. The collector
+# deep-merges the two --config files into one effective config: base.yaml
+# (receivers + auth) plus destinations.yaml (exporters + pipelines). Mount your
+# own destinations.yaml over the baked one to change where telemetry goes.
+# Run via busybox sh since the base image ships no shell.
 ENTRYPOINT ["/bin/busybox", "sh", "/entrypoint.sh"]
-CMD ["--config", "/etc/otelcol-contrib/config.yaml"]
+CMD ["--config", "/etc/otelcol-contrib/base.yaml", "--config", "/etc/otelcol-contrib/destinations.yaml"]
 
 # Liveness via the health_check extension (config exposes it on :13133).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
