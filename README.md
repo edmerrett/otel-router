@@ -53,6 +53,26 @@ destination receives log records as JSON on its feed URL with the access-key
 header — and nothing else (no traces/metrics); a sender without the inbound
 bearer token is rejected.
 
+## Sending sample traffic by hand
+
+`demo/send-sample.sh` posts one example trace, metric and log to the router
+with curl (OTLP/JSON), then greps the destination containers' Docker logs to
+confirm each arrived. Every run uses a unique marker, so a pass means *this*
+run's data landed:
+
+```bash
+docker compose up -d
+./demo/send-sample.sh
+```
+
+It takes an endpoint and token, so the same script smoke-tests a deployed
+router — sending works from any machine with curl; the log verification is
+skipped when the demo stack isn't running locally:
+
+```bash
+./demo/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"
+```
+
 ## Running against real destinations
 
 Build and run the router with your token and endpoints supplied as
@@ -169,4 +189,5 @@ config/otel-router.yaml  the router: one source, auth, two destinations
 docker-compose.yml       demo harness (router + webhook sink + OTLP sink + generators)
 demo/sink.yaml           OTLP destination used by the demo
 demo/test.sh             self-contained end-to-end test
+demo/send-sample.sh      curl-based sample traffic sender + delivery check
 ```

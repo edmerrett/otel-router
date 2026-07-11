@@ -5,9 +5,10 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
+# detailed so arriving span/metric/log content is visible and greppable
 exporters:
   debug:
-    verbosity: normal
+    verbosity: detailed
 
 service:
   pipelines:
