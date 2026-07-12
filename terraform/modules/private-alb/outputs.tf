@@ -39,12 +39,12 @@ output "log_group_name" {
 }
 
 output "lb_arn" {
-  description = "ARN of the internal ALB."
+  description = "ARN of the ALB."
   value       = aws_lb.this.arn
 }
 
 output "lb_dns_name" {
-  description = "DNS name of the internal ALB. Point a Route 53 alias or CNAME at it for a hostname matching the ACM certificate's SANs."
+  description = "DNS name of the ALB. Point a Route 53 alias or CNAME at it for a hostname matching the ACM certificate's SANs."
   value       = aws_lb.this.dns_name
 }
 

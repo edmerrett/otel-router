@@ -8,10 +8,13 @@ means TLS passthrough: the encrypted byte stream is forwarded untouched and
 from Secrets Manager at task start. The load balancer never holds a key and
 never sees plaintext telemetry.
 
-If your senders live inside your VPC (or arrive via VPN/peering), the sibling
-[`private-alb`](../private-alb) module is the simpler choice: an internal ALB
-terminates TLS with an ACM certificate and the router speaks plaintext behind
-it.
+If you do not need end-to-end encryption — you are content for the load
+balancer to terminate TLS with an AWS-managed (ACM) certificate and forward
+plaintext to the container over an internal hop — the sibling
+[`private-alb`](../private-alb) module is the simpler choice, and it can serve
+a public endpoint too (`alb_config.internal = false`). Reach for this
+`public-nlb` module specifically when the load balancer must never hold the key
+or see plaintext.
 
 ## Architecture
 

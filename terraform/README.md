@@ -2,8 +2,9 @@
 
 Terraform modules that run otel-router on ECS Fargate behind a load balancer,
 with the inbound token (and any destination credentials) injected from AWS
-Secrets Manager. Two deployment models ship as separate modules; pick the one
-that matches where your senders live.
+Secrets Manager. Two deployment models ship as separate modules; they differ
+in one thing — where TLS is terminated — and in both the router container runs
+in a private subnet either way.
 
 There is no published container image: you build from the repo
 [Dockerfile](../Dockerfile), push to your own registry (ECR), and hand the
@@ -13,30 +14,45 @@ service, IAM roles, CloudWatch logs and autoscaling.
 
 ## Choosing a deployment model
 
+The router container always runs in **private subnets with no public IP**; in
+both models the only thing exposed is the load balancer in front of it, and
+that is what "private" refers to — the container, not who may reach it. The
+choice is therefore *not* "internal senders vs internet senders": either load
+balancer can face inward or outward via its `internal` flag. The real
+difference is **who terminates TLS**, and so who holds the certificate.
+
 | | [`modules/private-alb`](modules/private-alb/) | [`modules/public-nlb`](modules/public-nlb/) |
 |---|---|---|
-| Who dials it | Senders inside your network (VPC, VPN, peering) | Senders on the internet (developer laptops, SaaS) |
-| Load balancer | Internal Application Load Balancer | Internet-facing Network Load Balancer |
-| TLS terminates at | The ALB | The router container itself (TCP passthrough) |
-| Certificate source | ACM (issued or imported) | PEM cert + key in Secrets Manager |
-| Router sees | Plaintext OTLP inside the VPC | TLS end-to-end, decrypted with its own key |
-| OTLP/gRPC `:4317` | Yes (GRPC target group; on by default) | Yes (TCP passthrough; on by default) |
+| TLS terminates at | The load balancer | The router container, end to end |
+| Certificate | ACM-managed (real CA, auto-renewed) | PEM cert + key you supply via Secrets Manager |
+| LB ↔ container hop | Plaintext OTLP, inside your VPC (security-group scoped) | Stays encrypted — the LB never holds a key or sees plaintext |
+| Load balancer | Application Load Balancer (L7: WAF, access logs) | Network Load Balancer (TCP passthrough) |
+| Default exposure | Internal ALB (`alb_config.internal = true`) | Internet-facing NLB (`nlb_config.internal = false`) |
+| Reachable from | Anything routed into the VPC — or the internet if `internal = false` | The internet — or the VPC only if `internal = true` |
+| OTLP/gRPC `:4317` | Yes | Yes |
 | OTLP/HTTP `:4318` | Yes (served on `:443` by default) | Yes |
 
-Rule of thumb: if every sender can already reach a private IP in your VPC,
-use `private-alb` and let ACM handle certificates. If senders arrive over the
-internet — the flagship case being Claude Code telemetry from a fleet of
-laptops — use `public-nlb` so telemetry stays encrypted all the way into the
-container.
+**Pick `private-alb`** to let AWS manage the certificate and terminate TLS for
+you — the simplest and most common choice. It is internal by default but
+becomes a fully public, ACM-terminated endpoint by setting
+`alb_config.internal = false` and opening `allowed_cidrs`; the only caveat is
+the load balancer decrypts and forwards plaintext to the container over an
+internal, security-group-scoped hop.
+
+**Pick `public-nlb`** when telemetry must stay encrypted *end to end* and no
+load balancer may ever hold the key or see plaintext — a DMZ, zero-trust, or
+compliance requirement — at the cost of managing the PEM pair yourself.
 
 ## Architecture
 
-**private-alb** — internal ALB terminates TLS; plaintext only inside the VPC:
+**private-alb** — the load balancer terminates TLS with ACM; the router runs
+plaintext in a private subnet behind it (ALB internal by default, or
+internet-facing):
 
 ```mermaid
 flowchart LR
-    S["Senders in your network<br/>(OTLP + bearer token)"] -- "TLS · ACM cert<br/>:443 HTTP / :4317 gRPC" --> A["Internal ALB<br/>terminates TLS"]
-    A -- "plaintext OTLP<br/>(VPC only)" --> R["ECS Fargate<br/>otel-router"]
+    S["Senders<br/>(OTLP + bearer token)"] -- "TLS · ACM cert<br/>:443 HTTP / :4317 gRPC" --> A["ALB terminates TLS<br/>(internal or internet-facing)"]
+    A -- "plaintext OTLP<br/>(private subnet, SG-scoped)" --> R["ECS Fargate<br/>otel-router"]
     R -- "https via NAT /<br/>VPC endpoints" --> D["Your destinations"]
 ```
 

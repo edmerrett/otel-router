@@ -30,7 +30,7 @@ variable "task_subnet_ids" {
 }
 
 variable "lb_subnet_ids" {
-  description = "Subnets for the internal ALB — typically the same private subnets as the tasks. ALBs require subnets in at least two Availability Zones."
+  description = "Subnets for the ALB, in at least two Availability Zones. With alb_config.internal = true (the default), the same private subnets as the tasks; with internal = false (internet-facing), public subnets."
   type        = list(string)
 
   validation {
@@ -123,15 +123,19 @@ variable "otel_router_config" {
 # --- specific to this module -------------------------------------------------
 
 variable "certificate_arn" {
-  description = "ACM certificate ARN for the HTTPS listeners. The internal ALB terminates TLS with it; senders must dial a hostname covered by the certificate's SANs, so point a Route 53 alias or CNAME for that hostname at the ALB DNS name."
+  description = "ACM certificate ARN for the HTTPS listeners. The ALB terminates TLS with it; senders must dial a hostname covered by the certificate's SANs, so point a Route 53 alias or CNAME for that hostname at the ALB DNS name."
   type        = string
 }
 
 variable "alb_config" {
   description = <<-EOT
-    Internal ALB behaviour.
+    ALB behaviour.
 
-      internal                - keep true; the public-nlb module is the intended internet-facing path.
+      internal                - true (default) keeps the ALB reachable only from within the VPC and
+                                anything routed into it (peering, VPN, Direct Connect). Set false for
+                                a fully public, ACM-terminated endpoint — a legitimate deployment; the
+                                container stays private and the bearer token still gates every request.
+                                Use the public-nlb module instead only when TLS must stay end-to-end.
       https_port              - OTLP/HTTP listener port (senders append /v1/traces etc.).
       grpc_port               - OTLP/gRPC listener port.
       enable_grpc             - false drops the gRPC listener, target group and security group openings.

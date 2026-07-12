@@ -1,21 +1,31 @@
 # private-alb
 
-Runs otel-router on ECS Fargate behind an **internal Application Load
-Balancer**. The ALB terminates TLS with an ACM certificate; the router speaks
-plaintext behind it. This is the deployment for senders that live inside your
-network (same VPC, peered VPCs, VPN or Direct Connect). If senders arrive over
-the public internet, use the sibling [`public-nlb`](../public-nlb/) module
-instead — it passes TLS through end-to-end.
+Runs otel-router on ECS Fargate behind an **Application Load Balancer** that
+terminates TLS with an ACM certificate; the router speaks plaintext in a
+private subnet behind it. The container is always private — only the ALB is
+exposed, and you choose how far: `alb_config.internal = true` (the default)
+keeps the ALB reachable from anything routed into the VPC (same VPC, peering,
+VPN, Direct Connect, Transit Gateway), while `alb_config.internal = false`
+makes it a fully public, ACM-terminated endpoint. Either way the load balancer
+decrypts and forwards plaintext to the container over an internal,
+security-group-scoped hop.
+
+Reach for this module whenever you want AWS to manage the certificate. The
+sibling [`public-nlb`](../public-nlb/) module is for the stricter case where
+TLS must stay **end-to-end** — the load balancer never holding a key or seeing
+plaintext — which it achieves by passing TCP straight through to a router that
+terminates TLS itself.
 
 Transport and auth stay independent layers: TLS ends at the ALB, but every
 request must still carry the inbound bearer token, which the router itself
-enforces. An in-VPC caller without the token gets `Unauthenticated`.
+enforces. A caller that reaches the ALB without the token gets
+`Unauthenticated`.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    S["Senders in your network<br/>(VPC / peering / VPN)"] -- "TLS + bearer token<br/>:443 OTLP/HTTP · :4317 OTLP/gRPC" --> A["Internal ALB<br/>ACM cert terminates TLS"]
+    S["Senders<br/>(internal, or public if internal=false)"] -- "TLS + bearer token<br/>:443 OTLP/HTTP · :4317 OTLP/gRPC" --> A["ALB<br/>ACM cert terminates TLS"]
     A -- "plaintext HTTP/1.1 → :4318<br/>cleartext h2c gRPC → :4317" --> T["otel-router on Fargate<br/>auth · batch · fan-out<br/>autoscaled 1–3 tasks"]
     T -- "HTTPS egress<br/>(NAT / VPC endpoints)" --> D["Your destinations"]
 ```
@@ -87,7 +97,7 @@ record for a hostname the certificate actually covers.
 | `name` | `string` | `"otel-router"` | Prefix for everything the module names. 1–27 chars, lowercase alphanumeric and hyphens: the target groups append `-http`/`-grpc`, and the result must fit AWS's 32-char LB/target-group name cap. |
 | `vpc_id` | `string` | required | VPC for the ALB, target groups and security groups. |
 | `task_subnet_ids` | `list(string)` | required | Private subnets for the Fargate tasks. No public IPs are assigned, so they need NAT or VPC endpoints to reach ECR and your destinations. |
-| `lb_subnet_ids` | `list(string)` | required | Subnets for the internal ALB, in at least two Availability Zones (an ALB requirement). Typically the same private subnets as the tasks. |
+| `lb_subnet_ids` | `list(string)` | required | Subnets for the ALB, in at least two Availability Zones (an ALB requirement). Private subnets (typically the task subnets) when `alb_config.internal = true`; public subnets when `internal = false`. |
 | `image` | `string` | required | Full URI of the otel-router image you built and pushed. There is no published image: `destinations.yaml` is baked in at build time, so the image is necessarily yours. |
 | `inbound_token_secret_arn` | `string` | required | Secrets Manager secret ARN whose value is `INBOUND_TOKEN`. Injected at container start; never appears in the task definition. Generate with `openssl rand -hex 32`. |
 | `certificate_arn` | `string` | required | ACM certificate for both HTTPS listeners. Senders must dial a hostname covered by its SANs. |

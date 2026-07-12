@@ -3,10 +3,16 @@
 # This file shows BOTH deployment models side by side so you can see the full
 # wiring. In practice you pick ONE:
 #
-#   modules/private-alb   senders live inside your network; an internal ALB
-#                         terminates TLS with an ACM certificate
-#   modules/public-nlb    senders dial in over the internet; a public NLB
-#                         passes TLS through to the router's own certificate
+#   modules/private-alb   an ALB terminates TLS with an ACM certificate; the
+#                         router runs plaintext in a private subnet behind it
+#                         (ALB internal by default, or internet-facing)
+#   modules/public-nlb    an NLB passes TCP through so the router terminates
+#                         TLS itself, end to end (never decrypted at the LB)
+#
+# The container is private either way; the models differ in where TLS is
+# terminated, not in who is allowed to reach it. See README.md for the full
+# comparison. This example wires private-alb internal and public-nlb
+# internet-facing, but either flag can flip.
 #
 # To adapt: copy this file into your own Terraform root, delete the module
 # block you do not need together with its variables and outputs, and keep the

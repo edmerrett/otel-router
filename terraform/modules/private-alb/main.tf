@@ -1,8 +1,10 @@
-# Private deployment: senders inside the network dial an INTERNAL ALB that
-# terminates TLS with an ACM certificate; behind it, otel-router tasks on
-# Fargate speak plaintext. Transport and auth stay independent layers — the
-# bearer-token check still happens inside the router, so stripping TLS at the
-# ALB never means accepting unauthenticated telemetry.
+# ALB deployment: senders dial an ALB that terminates TLS with an ACM
+# certificate; behind it, otel-router tasks on Fargate speak plaintext in a
+# private subnet. The container is always private — only the ALB is exposed,
+# internal by default (alb_config.internal) or internet-facing if you set it
+# false. Transport and auth stay independent layers — the bearer-token check
+# still happens inside the router, so stripping TLS at the ALB never means
+# accepting unauthenticated telemetry.
 #
 # Layout: data sources and locals, security groups, load balancer, target
 # groups, listeners, logs, cluster, task definition, service, autoscaling.
@@ -60,7 +62,7 @@ locals {
 # and run health checks against them.
 resource "aws_security_group" "alb" {
   name_prefix = "${var.name}-alb-"
-  description = "Senders allowed to reach the otel-router internal ALB"
+  description = "Senders allowed to reach the otel-router ALB"
   vpc_id      = var.vpc_id
 
   dynamic "ingress" {
