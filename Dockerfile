@@ -4,7 +4,7 @@
 # distroless image (the default glibc build would need an interpreter that
 # isn't there). The :1.37-uclibc tag stays in the ref so Dependabot bumps the
 # digest within the static line, not to the glibc :latest build.
-FROM busybox:1.37-uclibc@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a AS busybox
+FROM busybox:1.38-uclibc@sha256:eea4ff5612c911abd1d0e9ed47ba642547b01c3490877d9c1bb5fd6346462da4 AS busybox
 
 # Contrib distribution: needed for bearertokenauth (inbound guard) and
 # health_check. Pinned by digest; tag: otel/opentelemetry-collector-contrib:0.156.0
