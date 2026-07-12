@@ -3,7 +3,7 @@
 # health-check. The uclibc build is statically linked, so it runs in the
 # distroless image (the default glibc build would need an interpreter that
 # isn't there). Pinned by digest; tag shown for humans: busybox:1.37-uclibc
-FROM busybox@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a AS busybox
+FROM busybox@sha256:fd8d9aa63ba2f0982b5304e1ee8d3b90a210bc1ffb5314d980eb6962f1a9715d AS busybox
 
 # Contrib distribution: needed for bearertokenauth (inbound guard) and
 # health_check. Pinned by digest; tag: otel/opentelemetry-collector-contrib:0.156.0
