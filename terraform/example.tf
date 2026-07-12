@@ -14,6 +14,15 @@
 # State backends are deliberately out of scope — add your usual `backend`
 # block to the terraform {} below.
 #
+# Existing infrastructure: this file provisions everything greenfield (VPC,
+# ECS cluster), but every piece is bring-your-own. Deploy into a VPC you
+# already run by deleting the `module "vpc"` block and passing your own
+# vpc_id / subnet IDs. Deploy into an ECS cluster you already run by setting
+# var.existing_ecs_cluster_arn (see its definition below) — otherwise each
+# module creates its own cluster. Same pattern for the log group, task
+# security group, and IAM (all default to module-created, all overridable via
+# otel_router_config).
+#
 # Prerequisites (copy-paste commands in README.md next to this file):
 #   - the otel-router image built from the repo Dockerfile and pushed to ECR
 #   - destination credential secrets created in Secrets Manager
@@ -53,6 +62,19 @@ variable "region" {
 variable "image" {
   description = "Registry URI of the otel-router image you built from the repo Dockerfile and pushed, e.g. \"123456789012.dkr.ecr.us-east-1.amazonaws.com/otel-router:0.156.0\"."
   type        = string
+}
+
+# Cluster placement. Leave null and each module creates its OWN Fargate cluster
+# (named after the module's `name`, Container Insights on) and deploys the
+# service into it — zero extra setup. Set this to an existing cluster ARN
+# (arn:aws:ecs:<region>:<acct>:cluster/<name>) and the modules skip cluster
+# creation and register the service into yours instead. Fargate tasks need no
+# EC2 capacity in that cluster; it is purely where the service is grouped.
+# Look one up with: aws ecs list-clusters
+variable "existing_ecs_cluster_arn" {
+  description = "ARN of an existing ECS cluster to deploy the router service into. Leave null to have each module create its own cluster."
+  type        = string
+  default     = null
 }
 
 variable "certificate_arn" {
@@ -204,6 +226,10 @@ module "otel_router_private" {
   }
 
   otel_router_config = {
+    # null => this module creates its own cluster; set var.existing_ecs_cluster_arn
+    # to deploy into a cluster you already run instead.
+    ecs_cluster_arn = var.existing_ecs_cluster_arn
+
     # Every variable the baked-in destinations.yaml references must be set,
     # or the collector refuses to start. Endpoints are plain env;
     # credentials are injected from Secrets Manager.
@@ -257,6 +283,10 @@ module "otel_router_public" {
   }
 
   otel_router_config = {
+    # null => this module creates its own cluster; set var.existing_ecs_cluster_arn
+    # to deploy into a cluster you already run instead.
+    ecs_cluster_arn = var.existing_ecs_cluster_arn
+
     extra_environment_variables = {
       BACKEND_ENDPOINT = var.backend_endpoint
       WEBHOOK_ENDPOINT = var.webhook_endpoint
