@@ -168,26 +168,30 @@ git clone https://github.com/edmerrett/otel-router
 cd otel-router
 ```
 
-**Step 2 — run the automated end-to-end test.**
+**Step 2 — run the narrated end-to-end test.**
 
 ```bash
-./demo/test.sh
+./test/test.sh
 ```
 
-This builds the image, starts everything, fires sample traces/metrics/logs
-through the router, and checks they arrive correctly. You should see a list of
-`PASS` lines ending in `All checks passed.` Among other things it proves:
+This builds the image, starts everything, then walks one request through the
+router stage by stage: it sends a trace, metric and log, shows the router
+accepting and authenticating them, then pulls the exact matching record out of
+each destination so you can see where it landed. Among other things it proves:
 
 - all three signals reach the native-OTLP destination,
 - logs (and only logs) reach the webhook destination, as JSON with the right
   header keys,
 - a sender with **no** token is rejected.
 
-If that passes, the router is sound on your machine. If it does not, jump to
-[Chapter 13](#chapter-13--troubleshooting).
+It self-checks at every stage and exits 0 or 1, so it doubles as the CI test.
+End on `All stages passed.` and the router is sound on your machine; if not,
+jump to [Chapter 13](#chapter-13--troubleshooting). (Set `DEMO_PACE=0` to skip
+the pauses, e.g. for CI or a screen recording.)
 
-**Step 3 — watch it live (optional).** To see the data with your own eyes
-rather than through the test's assertions:
+**Step 3 — watch the raw stream (optional).** The test shows curated records;
+to see the unfiltered telemetry arriving at the destinations, run the stack
+with its always-on generators instead:
 
 ```bash
 docker compose up          # Ctrl-C to stop
@@ -402,7 +406,7 @@ docker logs otel-router | grep "Everything is ready"
 **Step 4 — smoke-test locally before involving the internet or real senders:**
 
 ```bash
-./demo/send-sample.sh
+./test/send-sample.sh
 ```
 
 With the demo stack not running, this sends one trace, metric, and log to
@@ -412,7 +416,7 @@ and forwarded them. Look in your SIEM and app backend for the sample.
 
 If a send returns `401`, your `INBOUND_TOKEN` and the token the script uses do
 not match (the script defaults to the demo token; pass yours as the second
-argument: `./demo/send-sample.sh http://localhost:4318 "$INBOUND_TOKEN"`).
+argument: `./test/send-sample.sh http://localhost:4318 "$INBOUND_TOKEN"`).
 
 ---
 
@@ -482,9 +486,8 @@ Both OTLP ports then serve TLS, and startup fails closed if the cert or key
 is missing. Behind an ALB HTTPS target group a self-signed certificate is
 sufficient (the ALB does not validate target certificates); for direct client
 exposure use a certificate the clients trust. `.env.example` has a
-self-signed generation one-liner, and `demo/tls-test.sh` shows the whole
-thing working end to end. The health port (13133) stays plain HTTP, so ECS
-and ALB health checks keep working unchanged.
+self-signed generation one-liner. The health port (13133) stays plain HTTP, so
+ECS and ALB health checks keep working unchanged.
 
 ---
 
@@ -604,7 +607,7 @@ block and rebuild.
 
 **Upgrade the Collector.** The image is pinned (e.g. `0.156.0`) on purpose.
 When you upgrade, bump the tag in the `Dockerfile`, read that release's notes,
-rebuild, and re-run `./demo/test.sh` before deploying.
+rebuild, and re-run `./test/test.sh` before deploying.
 
 **Understand delivery guarantees.** Each exporter has a retry queue, so brief
 destination outages are absorbed and the two destinations fail independently.
@@ -618,7 +621,7 @@ queues.
 
 | Symptom                                   | Likely cause and fix                                                                 |
 |-------------------------------------------|--------------------------------------------------------------------------------------|
-| `./demo/test.sh` fails to start the stack | Docker not running, or ports 4317/4318 already in use. Start Docker; free the ports. |
+| `./test/test.sh` fails to start the stack | Docker not running, or ports 4317/4318 already in use. Start Docker; free the ports. |
 | Sender gets `401 Unauthenticated`         | Token mismatch or malformed header. Value must be `Bearer <token>`, `=` not `:` in Claude's `OTEL_EXPORTER_OTLP_HEADERS`, no stray spaces. |
 | Sender gets `400` with a JSON parse error | The request body is malformed JSON, not an auth or transport problem. The request reached the router fine. |
 | Sender gets `404`                         | A path was appended to the endpoint. Give the **base** URL; the exporter adds `/v1/...`. |
