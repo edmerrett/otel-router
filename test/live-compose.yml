@@ -1,6 +1,6 @@
 # Live-test topology: the router plus two inspectable local stand-ins for your
 # real destinations, and NO synthetic generators. The telemetry comes from
-# Claude Cowork via the public tunnel. Used by demo/cowork-live-test.sh.
+# Claude Cowork via the public tunnel. Used by test/cowork-live-test.sh.
 #
 #   sink-backend  native OTLP receiver (all signals) -> stands in for a backend
 #   sink-webhook  HTTP echo (logs only, JSON)        -> stands in for a webhook feed

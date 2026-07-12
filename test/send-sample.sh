@@ -5,12 +5,12 @@
 #
 # Shareable: sending needs only curl + openssl; verification needs docker.
 #
-# Usage: demo/send-sample.sh [endpoint] [token]
+# Usage: test/send-sample.sh [endpoint] [token]
 #   endpoint  router OTLP/HTTP base URL (default http://localhost:4318)
 #   token     inbound bearer token. Precedence: arg 2, then $INBOUND_TOKEN,
 #             then the demo default. Prefer the env var for real tokens so
 #             they don't land in your shell history or `ps` output:
-#               INBOUND_TOKEN=... demo/send-sample.sh https://router.example.com
+#               INBOUND_TOKEN=... test/send-sample.sh https://router.example.com
 set -u
 ENDPOINT="${1:-http://localhost:4318}"
 TOKEN="${2:-${INBOUND_TOKEN:-demo-inbound-token}}"

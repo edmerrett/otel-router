@@ -60,7 +60,7 @@ directly and drop the webhook shape.
    | `WEBHOOK_SECRET`   | feed secret key (`X-Webhook-Access-Key`)               |
 
 4. Smoke-test from any machine before wiring anything else up:
-   `./demo/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"` —
+   `./test/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"` —
    expect three `HTTP 200`s; a `401` means the token, a `404`/`502` means
    the proxy wiring.
 
@@ -186,8 +186,8 @@ against your SecOps tier's ingestion cap.
 
 ## Step 5 — verify end to end
 
-1. `./demo/test.sh` locally — proves the image and config are sound.
-2. `./demo/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"` —
+1. `./test/test.sh` locally — proves the image and config are sound.
+2. `./test/send-sample.sh https://otel.yourdomain.com "$INBOUND_TOKEN"` —
    the script prints a unique marker (e.g. `sample_1783790961`).
 3. **SecOps**: raw log search for the marker (scoped to your feed's log
    type). **Harmonic**: check the console for `service.name=sample-sender`
