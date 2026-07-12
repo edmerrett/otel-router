@@ -85,7 +85,7 @@ Base and demo images are pinned by digest (`@sha256:...`) in the
 [`Dockerfile`](../Dockerfile) and [`docker-compose.yml`](../docker-compose.yml),
 so a build always resolves to the exact bytes reviewed. When you upgrade the
 Collector, refresh the digest deliberately, read the release notes, and re-run
-`./demo/test.sh` before deploying. The container runs as a non-root user
+`./test/test.sh` before deploying. The container runs as a non-root user
 (UID 10001).
 
 ## Rotation

@@ -66,7 +66,7 @@ sender without a token) is rejected with `Unauthenticated`.
 **2. Assert it works.** Same stack, self-checking, exits 0 or 1:
 
 ```bash
-./demo/test.sh
+./test/test.sh
 ```
 
 **3. Run it for real.** Copy the env template, fill in your endpoints and
@@ -209,10 +209,9 @@ Full threat model and hardening notes: [docs/SECURITY.md](docs/SECURITY.md).
 
 | Script                      | What it proves                                                        |
 |-----------------------------|-----------------------------------------------------------------------|
-| `demo/test.sh`              | End-to-end: all signals delivered, headers correct, no-auth rejected  |
-| `demo/tls-test.sh`          | The TLS mode: certs served, plaintext refused, fail-closed startup    |
-| `demo/send-sample.sh`       | Sends one trace/metric/log by hand (also smoke-tests a deployed router) |
-| `demo/cowork-live-test.sh`  | Live run with real Claude Cowork telemetry through a public URL       |
+| `test/test.sh`              | Narrated end-to-end test (also runs in CI): all signals delivered, headers correct, logs-only filtered, no-auth rejected |
+| `test/send-sample.sh`       | Sends one trace/metric/log by hand (also smoke-tests a deployed router) |
+| `test/cowork-live-test.sh`  | Live run with real Claude Cowork telemetry through a public URL       |
 
 The flagship source, Claude Code telemetry, is enabled with:
 
@@ -250,7 +249,7 @@ config/base.yaml           fixed core: receivers, inbound auth, batching
 config/destinations.yaml   your destinations: exporters + per-signal pipelines
 config/tls.yaml            TLS overlay merged in when TLS_ENABLED=true
 docker-compose.yml         demo harness (router + two example sinks + generators)
-demo/                      end-to-end tests, sample sender, live Cowork test
+test/                      end-to-end tests, sample sender, live Cowork test
 docs/                      user guide, vendor setup, security notes
 ```
 

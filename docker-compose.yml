@@ -4,7 +4,7 @@
 # standing in for an observability backend (all signals). Both are just example
 # destinations defined in config/destinations.yaml. Run `docker compose up` and
 # watch both receive data, while gen-noauth (no bearer token) is rejected. Run
-# demo/test.sh for the asserted version.
+# test/test.sh for a narrated, self-checking walkthrough of the same path.
 
 services:
   router:
@@ -33,7 +33,7 @@ services:
     image: otel/opentelemetry-collector@sha256:0beba82d63792511591522a8d582904b9a8ae81710357bfcab731607b8b0ffe2
     command: ["--config=/etc/otelcol/sink.yaml"]
     volumes:
-      - ./demo/sink.yaml:/etc/otelcol/sink.yaml:ro
+      - ./test/sink.yaml:/etc/otelcol/sink.yaml:ro
 
   gen-traces:
     image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen@sha256:54c6f259070137716c741209b41d6b6742ace57fff0d8d754d88aaf310536834
