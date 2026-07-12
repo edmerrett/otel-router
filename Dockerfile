@@ -2,8 +2,9 @@
 # a single busybox binary to validate required secrets at startup and to
 # health-check. The uclibc build is statically linked, so it runs in the
 # distroless image (the default glibc build would need an interpreter that
-# isn't there). Pinned by digest; tag shown for humans: busybox:1.37-uclibc
-FROM busybox@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a AS busybox
+# isn't there). The :1.37-uclibc tag stays in the ref so Dependabot bumps the
+# digest within the static line, not to the glibc :latest build.
+FROM busybox:1.37-uclibc@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a AS busybox
 
 # Contrib distribution: needed for bearertokenauth (inbound guard) and
 # health_check. Pinned by digest; tag: otel/opentelemetry-collector-contrib:0.156.0
