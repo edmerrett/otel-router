@@ -10,11 +10,11 @@ never sees plaintext telemetry.
 
 If you do not need end-to-end encryption — you are content for the load
 balancer to terminate TLS with an AWS-managed (ACM) certificate and forward
-plaintext to the container over an internal hop — the sibling
-[`private-alb`](../private-alb) module is the simpler choice, and it can serve
-a public endpoint too (`alb_config.internal = false`). Reach for this
-`public-nlb` module specifically when the load balancer must never hold the key
-or see plaintext.
+plaintext to the container over an in-VPC hop — the sibling
+[`private-alb`](../private-alb) module is the simpler choice, and is
+internet-facing by default (`alb_config.internal = true` to restrict it to the
+VPC). Reach for this `public-nlb` module specifically when the load balancer
+must never hold the key or see plaintext.
 
 ## Architecture
 

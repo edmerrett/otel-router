@@ -5,14 +5,13 @@
 #
 #   modules/private-alb   an ALB terminates TLS with an ACM certificate; the
 #                         router runs plaintext in a private subnet behind it
-#                         (ALB internal by default, or internet-facing)
 #   modules/public-nlb    an NLB passes TCP through so the router terminates
 #                         TLS itself, end to end (never decrypted at the LB)
 #
-# The container is private either way; the models differ in where TLS is
-# terminated, not in who is allowed to reach it. See README.md for the full
-# comparison. This example wires private-alb internal and public-nlb
-# internet-facing, but either flag can flip.
+# The container runs in a private subnet either way; the models differ in where
+# TLS is terminated, not in who is allowed to reach it. Both load balancers are
+# internet-facing by default (set alb_config.internal / nlb_config.internal =
+# true for a VPC-only load balancer). See README.md for the full comparison.
 #
 # To adapt: copy this file into your own Terraform root, delete the module
 # block you do not need together with its variables and outputs, and keep the
@@ -84,7 +83,7 @@ variable "existing_ecs_cluster_arn" {
 }
 
 variable "certificate_arn" {
-  description = "private-alb only: ARN of the ACM certificate served by the internal ALB's HTTPS listeners."
+  description = "private-alb only: ARN of the ACM certificate served by the ALB's HTTPS listeners."
   type        = string
 }
 
@@ -201,8 +200,10 @@ resource "aws_secretsmanager_secret_version" "inbound_token" {
 }
 
 # ---------------------------------------------------------------------------
-# Deployment model 1: private VPC. Internal ALB terminates TLS with the ACM
-# certificate; the router speaks plaintext behind it, inside the VPC.
+# Deployment model 1: ALB terminates TLS with the ACM certificate; the router
+# speaks plaintext behind it, in a private subnet. The ALB is internet-facing
+# (set alb_config.internal = true, and move lb_subnet_ids to private subnets,
+# for a VPC-only endpoint).
 # ---------------------------------------------------------------------------
 
 module "otel_router_private" {
@@ -218,17 +219,19 @@ module "otel_router_private" {
 
   vpc_id                   = module.vpc.vpc_id
   task_subnet_ids          = module.vpc.private_subnets
-  lb_subnet_ids            = module.vpc.private_subnets # internal ALB: private subnets
+  lb_subnet_ids            = module.vpc.public_subnets # internet-facing ALB: public subnets
   image                    = var.image
   inbound_token_secret_arn = aws_secretsmanager_secret.inbound_token.arn
   certificate_arn          = var.certificate_arn
   tags                     = local.tags
 
   alb_config = {
-    # Fail-closed by design: the module refuses to plan unless you name at
-    # least one ingress source. Here anything inside the VPC may send;
-    # narrow to your senders' security groups via allowed_security_groups.
-    allowed_cidrs = [module.vpc.vpc_cidr_block]
+    # Internet-facing by default. Fail-closed: the module refuses to plan
+    # unless you name at least one ingress source. "Anyone may reach the
+    # ACM-terminated listeners" is an explicit choice — narrow to your
+    # senders' CIDRs, or set internal = true for a VPC-only ALB. The bearer
+    # token still gates every request regardless.
+    allowed_cidrs = ["0.0.0.0/0"]
   }
 
   otel_router_config = {
@@ -313,12 +316,12 @@ module "otel_router_public" {
 # ---------------------------------------------------------------------------
 
 output "private_otlp_http_endpoint" {
-  description = "OTLP/HTTP endpoint on the internal ALB."
+  description = "OTLP/HTTP endpoint on the ALB."
   value       = module.otel_router_private.otlp_http_endpoint
 }
 
 output "private_otlp_grpc_endpoint" {
-  description = "OTLP/gRPC endpoint on the internal ALB (null when gRPC is disabled)."
+  description = "OTLP/gRPC endpoint on the ALB (null when gRPC is disabled)."
   value       = module.otel_router_private.otlp_grpc_endpoint
 }
 

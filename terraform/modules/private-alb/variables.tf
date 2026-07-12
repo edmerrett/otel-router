@@ -30,7 +30,7 @@ variable "task_subnet_ids" {
 }
 
 variable "lb_subnet_ids" {
-  description = "Subnets for the ALB, in at least two Availability Zones. With alb_config.internal = true (the default), the same private subnets as the tasks; with internal = false (internet-facing), public subnets."
+  description = "Subnets for the ALB, in at least two Availability Zones. Public subnets for the default internet-facing ALB; private subnets (typically the task subnets) if you set alb_config.internal = true."
   type        = list(string)
 
   validation {
@@ -131,11 +131,11 @@ variable "alb_config" {
   description = <<-EOT
     ALB behaviour.
 
-      internal                - true (default) keeps the ALB reachable only from within the VPC and
-                                anything routed into it (peering, VPN, Direct Connect). Set false for
-                                a fully public, ACM-terminated endpoint — a legitimate deployment; the
-                                container stays private and the bearer token still gates every request.
-                                Use the public-nlb module instead only when TLS must stay end-to-end.
+      internal                - false (default) makes the ALB internet-facing; put public subnets in
+                                lb_subnet_ids. Set true only if you want to restrict it to the VPC and
+                                anything routed into it (peering, VPN, Direct Connect), in which case
+                                lb_subnet_ids may be private subnets. Either way the container stays in
+                                a private subnet and the bearer token gates every request.
       https_port              - OTLP/HTTP listener port (senders append /v1/traces etc.).
       grpc_port               - OTLP/gRPC listener port.
       enable_grpc             - false drops the gRPC listener, target group and security group openings.
@@ -148,7 +148,7 @@ variable "alb_config" {
   EOT
 
   type = object({
-    internal                = optional(bool, true)
+    internal                = optional(bool, false)
     https_port              = optional(number, 443)
     grpc_port               = optional(number, 4317)
     enable_grpc             = optional(bool, true)

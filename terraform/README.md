@@ -27,17 +27,16 @@ difference is **who terminates TLS**, and so who holds the certificate.
 | Certificate | ACM-managed (real CA, auto-renewed) | PEM cert + key you supply via Secrets Manager |
 | LB ↔ container hop | Plaintext OTLP, inside your VPC (security-group scoped) | Stays encrypted — the LB never holds a key or sees plaintext |
 | Load balancer | Application Load Balancer (L7: WAF, access logs) | Network Load Balancer (TCP passthrough) |
-| Default exposure | Internal ALB (`alb_config.internal = true`) | Internet-facing NLB (`nlb_config.internal = false`) |
-| Reachable from | Anything routed into the VPC — or the internet if `internal = false` | The internet — or the VPC only if `internal = true` |
+| Default exposure | Internet-facing ALB (`alb_config.internal = false`) | Internet-facing NLB (`nlb_config.internal = false`) |
+| Reachable from | The internet — or the VPC only if you set `internal = true` | The internet — or the VPC only if you set `internal = true` |
 | OTLP/gRPC `:4317` | Yes | Yes |
 | OTLP/HTTP `:4318` | Yes (served on `:443` by default) | Yes |
 
 **Pick `private-alb`** to let AWS manage the certificate and terminate TLS for
-you — the simplest and most common choice. It is internal by default but
-becomes a fully public, ACM-terminated endpoint by setting
-`alb_config.internal = false` and opening `allowed_cidrs`; the only caveat is
-the load balancer decrypts and forwards plaintext to the container over an
-internal, security-group-scoped hop.
+you — the simplest and most common choice. It stands up an internet-facing,
+ACM-terminated endpoint (set `alb_config.internal = true` to restrict it to the
+VPC instead); the only caveat is the load balancer decrypts and forwards
+plaintext to the container over a security-group-scoped hop inside the VPC.
 
 **Pick `public-nlb`** when telemetry must stay encrypted *end to end* and no
 load balancer may ever hold the key or see plaintext — a DMZ, zero-trust, or
@@ -45,13 +44,12 @@ compliance requirement — at the cost of managing the PEM pair yourself.
 
 ## Architecture
 
-**private-alb** — the load balancer terminates TLS with ACM; the router runs
-plaintext in a private subnet behind it (ALB internal by default, or
-internet-facing):
+**private-alb** — an internet-facing load balancer terminates TLS with ACM; the
+router runs plaintext in a private subnet behind it:
 
 ```mermaid
 flowchart LR
-    S["Senders<br/>(OTLP + bearer token)"] -- "TLS · ACM cert<br/>:443 HTTP / :4317 gRPC" --> A["ALB terminates TLS<br/>(internal or internet-facing)"]
+    S["Senders<br/>(OTLP + bearer token)"] -- "TLS · ACM cert<br/>:443 HTTP / :4317 gRPC" --> A["ALB terminates TLS<br/>(ACM cert)"]
     A -- "plaintext OTLP<br/>(private subnet, SG-scoped)" --> R["ECS Fargate<br/>otel-router"]
     R -- "https via NAT /<br/>VPC endpoints" --> D["Your destinations"]
 ```
