@@ -1,19 +1,19 @@
-# private-alb
+# ecs-fargate
 
-Runs otel-router on ECS Fargate behind an **Application Load Balancer** that
-terminates TLS with an ACM certificate; the router speaks plaintext in a
-private subnet behind it. The container is always private — only the ALB is
-exposed. By default the ALB is **internet-facing** (put it in public subnets);
-set `alb_config.internal = true` to restrict it to the VPC and anything routed
-into it (peering, VPN, Direct Connect, Transit Gateway) instead. Either way the
-load balancer decrypts and forwards plaintext to the container over a
-security-group-scoped hop inside the VPC.
+Runs otel-router as a managed **ECS Fargate** service behind an **Application
+Load Balancer** that terminates TLS with an ACM certificate; the router speaks
+plaintext in a private subnet behind it. This is the module for teams already
+on ECS — you get autoscaling, rolling deploys with a circuit breaker, and
+AWS-managed certificates for free. If you do **not** run ECS, the sibling
+[`ec2-docker`](../ec2-docker/) module runs the same container on a single EC2
+host via Docker instead.
 
-Reach for this module whenever you want AWS to manage the certificate. The
-sibling [`public-nlb`](../public-nlb/) module is for the stricter case where
-TLS must stay **end-to-end** — the load balancer never holding a key or seeing
-plaintext — which it achieves by passing TCP straight through to a router that
-terminates TLS itself.
+The container is always private — only the ALB is exposed. By default the ALB
+is **internet-facing** (put it in public subnets); set `alb_config.internal =
+true` to restrict it to the VPC and anything routed into it (peering, VPN,
+Direct Connect, Transit Gateway) instead. Either way the load balancer decrypts
+and forwards plaintext to the container over a security-group-scoped hop inside
+the VPC.
 
 Transport and auth stay independent layers: TLS ends at the ALB, but every
 request must still carry the inbound bearer token, which the router itself
@@ -46,8 +46,8 @@ certificate for the hostname senders will dial.
 ```hcl
 module "otel_router" {
   # From a local checkout; when consuming from git, pin a tag:
-  # source = "github.com/edmerrett/otel-router//terraform/modules/private-alb?ref=<tag>"
-  source = "./modules/private-alb"
+  # source = "github.com/edmerrett/otel-router//terraform/modules/ecs-fargate?ref=<tag>"
+  source = "./modules/ecs-fargate"
 
   vpc_id          = module.vpc.vpc_id
   task_subnet_ids = module.vpc.private_subnets

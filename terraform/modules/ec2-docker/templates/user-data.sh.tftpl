@@ -1,0 +1,147 @@
+#!/bin/bash
+# cloud-init for the otel-router instance. Runs ONCE on first boot (that is why
+# the Terraform resource sets user_data_replace_on_change: editing this script
+# or its inputs replaces the instance so the new script runs). Everything it
+# writes to disk is inert config; the SECRETS are fetched at service start by
+# the systemd unit below, into /run (tmpfs), never onto the EBS volume.
+#
+# Output goes to /var/log/cloud-init-output.log. Templatefile escaping: a
+# literal shell expansion is written with a doubled dollar so Terraform passes
+# it through unchanged, whereas a single-dollar expansion is a Terraform value
+# rendered in at plan time.
+set -euo pipefail
+
+# --- 1. Dependencies ---------------------------------------------------------
+# docker to run the container, the ECR credential helper so `docker pull`
+# authenticates to ECR via the instance profile, unzip for the AWS CLI installer.
+dnf install -y docker amazon-ecr-credential-helper unzip
+
+# AL2023 ships the AWS CLI in most images, but not all — install v2 if missing
+# so the systemd unit can always call `aws secretsmanager get-secret-value`.
+if ! command -v aws >/dev/null 2>&1; then
+  curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp
+  /tmp/aws/install
+fi
+
+# --- 2. Docker ---------------------------------------------------------------
+systemctl enable --now docker
+
+# --- 3. ECR credential helper ------------------------------------------------
+# Wire `docker pull` of an image from this registry host to the ecr-login
+# helper, which mints a token from the instance profile. Non-ECR registries are
+# not covered by this — configure their own credentials on the host if you use
+# one. Written for root because the systemd unit runs docker as root.
+mkdir -p /root/.docker
+cat > /root/.docker/config.json <<'DOCKERCFG'
+{
+  "credHelpers": {
+    "${registry_host}": "ecr-login"
+  }
+}
+DOCKERCFG
+
+# --- 4. ExecStart script -----------------------------------------------------
+# Re-run on every (re)start of the service: it re-fetches the secrets and the
+# PEM pair into tmpfs, then execs the container. Because it runs each start,
+# rotating any secret is just `systemctl restart otel-router` (or a reboot) —
+# nothing secret persists on the EBS volume.
+cat > /usr/local/bin/otel-router-start.sh <<'STARTSCRIPT'
+#!/bin/bash
+set -euo pipefail
+
+REGION="${region}"
+IMAGE="${image}"
+RUN_DIR=/run/otel-router
+CERT_DIR="$${RUN_DIR}/certs"
+ENV_FILE="$${RUN_DIR}/env"
+
+# /run is tmpfs, so everything written below lives in RAM and is gone on stop —
+# secrets never touch the EBS volume. 0710 keeps the directory private to root.
+mkdir -p "$${CERT_DIR}"
+chmod 0710 "$${RUN_DIR}"
+
+# fetch_secret <secret-arn> -> prints the SecretString.
+fetch_secret() {
+  aws secretsmanager get-secret-value \
+    --region "$${REGION}" \
+    --secret-id "$1" \
+    --query SecretString \
+    --output text
+}
+
+# Env file for the container. umask 077 so it is created private; it is read by
+# the docker daemon (root), which is fine.
+umask 077
+: > "$${ENV_FILE}"
+{
+  printf 'INBOUND_TOKEN=%s\n' "$(fetch_secret '${inbound_token_secret_arn}')"
+%{ for name, value in extra_env ~}
+  printf '%s=%s\n' '${name}' '${value}'
+%{ endfor ~}
+%{ for name, arn in extra_secrets ~}
+  printf '%s=%s\n' '${name}' "$(fetch_secret '${arn}')"
+%{ endfor ~}
+%{ if require_env != "" ~}
+  printf 'REQUIRE_ENV=%s\n' '${require_env}'
+%{ endif ~}
+} >> "$${ENV_FILE}"
+chmod 600 "$${ENV_FILE}"
+
+# PEM cert and key into tmpfs. The container runs as UID 10001 and reads these
+# over a read-only bind mount, which preserves host ownership — so BOTH files
+# MUST be chowned to 10001 or the container cannot read the key and TLS startup
+# fails closed. (Verified: cert 0444, key 0400, both owned by 10001:10001.)
+fetch_secret '${tls_cert_secret_arn}' > "$${CERT_DIR}/tls.crt"
+fetch_secret '${tls_key_secret_arn}' > "$${CERT_DIR}/tls.key"
+chown 10001:10001 "$${CERT_DIR}/tls.crt" "$${CERT_DIR}/tls.key"
+chmod 0444 "$${CERT_DIR}/tls.crt"
+chmod 0400 "$${CERT_DIR}/tls.key"
+
+docker pull "$${IMAGE}"
+
+# Publish 4318 (OTLP/HTTP) always; 4317 (OTLP/gRPC) only when enabled. 13133
+# (health) is deliberately NOT published — health stays local to the box.
+PORT_ARGS=(-p 4318:4318)
+%{ if enable_grpc ~}
+PORT_ARGS+=(-p 4317:4317)
+%{ endif ~}
+
+# The container terminates TLS itself: TLS_ENABLED plus the PEM pair bind-mounted
+# read-only at /certs. --rm so a restart never trips over a stale container.
+exec docker run --rm --name otel-router \
+  --env-file "$${ENV_FILE}" \
+  -e TLS_ENABLED=true \
+  -e TLS_CERT_FILE=/certs/tls.crt \
+  -e TLS_KEY_FILE=/certs/tls.key \
+  -v "$${CERT_DIR}:/certs:ro" \
+  "$${PORT_ARGS[@]}" \
+  "$${IMAGE}"
+STARTSCRIPT
+chmod 0755 /usr/local/bin/otel-router-start.sh
+
+# --- 5. systemd unit ---------------------------------------------------------
+# ExecStartPre force-removes any leftover container from an unclean stop.
+# Restart=always with RestartSec=10 keeps the app up across crashes without
+# touching the instance; TimeoutStartSec allows for the image pull on a cold box.
+cat > /etc/systemd/system/otel-router.service <<'UNIT'
+[Unit]
+Description=otel-router container
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+ExecStartPre=-/usr/bin/docker rm -f otel-router
+ExecStart=/usr/local/bin/otel-router-start.sh
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+# --- 6. Start ----------------------------------------------------------------
+systemctl daemon-reload
+systemctl enable --now otel-router

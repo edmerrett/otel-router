@@ -1,7 +1,8 @@
-# Shared interface first (identical between private-alb and public-nlb), then
-# the variables specific to this module. Everything that tunes the service
+# Core inputs first (image, network, inbound token, service tuning), then the
+# variables specific to this ALB deployment. Everything that tunes the service
 # itself lives in otel_router_config; load-balancer behaviour lives in
-# alb_config.
+# alb_config. The sibling ec2-docker module mirrors the core inputs where they
+# make sense (image, inbound token secret, destination env/secrets).
 
 variable "name" {
   description = "Prefix for everything this module names: load balancer, target groups, cluster, IAM roles, log group. Keep it short — it is embedded in load balancer and target group names, which AWS caps at 32 characters."

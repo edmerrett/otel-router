@@ -1,17 +1,23 @@
 # otel-router on AWS — indicative root module.
 #
 # This file shows BOTH deployment models side by side so you can see the full
-# wiring. In practice you pick ONE:
+# wiring. In practice you pick ONE, by the infrastructure you already run:
 #
-#   modules/private-alb   an ALB terminates TLS with an ACM certificate; the
-#                         router runs plaintext in a private subnet behind it
-#   modules/public-nlb    an NLB passes TCP through so the router terminates
-#                         TLS itself, end to end (never decrypted at the LB)
+#   modules/ecs-fargate   a managed ECS Fargate service behind an ALB that
+#                         terminates TLS with an ACM certificate; the router
+#                         runs plaintext in a private subnet behind it. For
+#                         teams already on ECS.
+#   modules/ec2-docker    a single EC2 host running the container via Docker,
+#                         directly internet-facing, the container terminating
+#                         TLS itself with a PEM pair from Secrets Manager. For
+#                         teams not on ECS.
 #
-# The container runs in a private subnet either way; the models differ in where
-# TLS is terminated, not in who is allowed to reach it. Both load balancers are
-# internet-facing by default (set alb_config.internal / nlb_config.internal =
-# true for a VPC-only load balancer). See README.md for the full comparison.
+# The axis is the infrastructure you run, not who may reach the endpoint. In
+# the ECS case the container is always private and only the ALB is exposed; in
+# the EC2 case the container IS the box, reached on its Elastic IP. Either way
+# senders present a bearer token the router itself enforces, so TLS termination
+# never means accepting unauthenticated telemetry. See README.md for the full
+# comparison.
 #
 # To adapt: copy this file into your own Terraform root, delete the module
 # block you do not need together with its variables and outputs, and keep the
@@ -20,19 +26,19 @@
 # block to the terraform {} below.
 #
 # Existing infrastructure: this file provisions everything greenfield (VPC,
-# ECS cluster), but every piece is bring-your-own. Deploy into a VPC you
-# already run by deleting the `module "vpc"` block and passing your own
-# vpc_id / subnet IDs. Deploy into an ECS cluster you already run by setting
-# var.existing_ecs_cluster_arn (see its definition below) — otherwise each
-# module creates its own cluster. Same pattern for the log group, task
+# ECS cluster, EC2 instance), but every piece is bring-your-own. Deploy into a
+# VPC you already run by deleting the `module "vpc"` block and passing your own
+# vpc_id / subnet IDs. Deploy the ECS service into a cluster you already run by
+# setting var.existing_ecs_cluster_arn (see its definition below) — otherwise
+# the module creates its own cluster. Same pattern for the log group, task
 # security group, and IAM (all default to module-created, all overridable via
 # otel_router_config).
 #
 # Prerequisites (copy-paste commands in README.md next to this file):
 #   - the otel-router image built from the repo Dockerfile and pushed to ECR
 #   - destination credential secrets created in Secrets Manager
-#   - private-alb: a certificate in ACM covering the hostname senders dial
-#   - public-nlb:  the PEM certificate and key stored in Secrets Manager
+#   - ecs-fargate: a certificate in ACM covering the hostname senders dial
+#   - ec2-docker:  the PEM certificate and key stored in Secrets Manager
 
 terraform {
   required_version = ">= 1.5.0"
@@ -69,31 +75,31 @@ variable "image" {
   type        = string
 }
 
-# Cluster placement. Leave null and each module creates its OWN Fargate cluster
-# (named after the module's `name`, Container Insights on) and deploys the
-# service into it — zero extra setup. Set this to an existing cluster ARN
-# (arn:aws:ecs:<region>:<acct>:cluster/<name>) and the modules skip cluster
-# creation and register the service into yours instead. Fargate tasks need no
-# EC2 capacity in that cluster; it is purely where the service is grouped.
-# Look one up with: aws ecs list-clusters
+# Cluster placement (ecs-fargate only). Leave null and the module creates its
+# OWN Fargate cluster (named after the module's `name`, Container Insights on)
+# and deploys the service into it — zero extra setup. Set this to an existing
+# cluster ARN (arn:aws:ecs:<region>:<acct>:cluster/<name>) and the module skips
+# cluster creation and registers the service into yours instead. Fargate tasks
+# need no EC2 capacity in that cluster; it is purely where the service is
+# grouped. Look one up with: aws ecs list-clusters
 variable "existing_ecs_cluster_arn" {
-  description = "ARN of an existing ECS cluster to deploy the router service into. Leave null to have each module create its own cluster."
+  description = "ecs-fargate only: ARN of an existing ECS cluster to deploy the router service into. Leave null to have the module create its own cluster."
   type        = string
   default     = null
 }
 
 variable "certificate_arn" {
-  description = "private-alb only: ARN of the ACM certificate served by the ALB's HTTPS listeners."
+  description = "ecs-fargate only: ARN of the ACM certificate served by the ALB's HTTPS listeners."
   type        = string
 }
 
 variable "tls_cert_secret_arn" {
-  description = "public-nlb only: Secrets Manager secret ARN whose value is the PEM certificate (full chain) the router serves."
+  description = "ec2-docker only: Secrets Manager secret ARN whose value is the PEM certificate (full chain) the container serves."
   type        = string
 }
 
 variable "tls_key_secret_arn" {
-  description = "public-nlb only: Secrets Manager secret ARN whose value is the matching PEM private key."
+  description = "ec2-docker only: Secrets Manager secret ARN whose value is the matching PEM private key."
   type        = string
 }
 
@@ -142,10 +148,11 @@ locals {
 
 # ---------------------------------------------------------------------------
 # Network. An existing VPC works just as well: delete this module and pass
-# your own VPC/subnet IDs straight to the otel-router modules. Tasks need
-# private subnets with a route out (NAT here) to pull the image from ECR and
-# to reach your destinations; the public-nlb module additionally needs public
-# subnets for the internet-facing NLB.
+# your own VPC/subnet IDs straight to the otel-router modules. The Fargate
+# tasks need private subnets with a route out (NAT here) to pull the image
+# from ECR and reach your destinations; the ec2-docker instance sits in a
+# public subnet, reaching ECR and your destinations directly over its Elastic
+# IP.
 # ---------------------------------------------------------------------------
 
 data "aws_availability_zones" "available" {
@@ -172,10 +179,11 @@ module "vpc" {
 # ---------------------------------------------------------------------------
 # Inbound token: the bearer token every sender must present. Generated with
 # real randomness — mirroring .env.example, never mint tokens by hand — and
-# stored in Secrets Manager so ECS injects it at task start. Note the value
-# does land in Terraform state via random_password; if your state is not
-# treated as secret-grade, create this secret out-of-band instead (README.md
-# has the one-liner) and pass its ARN like the destination secrets above.
+# stored in Secrets Manager so both models inject it at container start. Note
+# the value does land in Terraform state via random_password; if your state is
+# not treated as secret-grade, create this secret out-of-band instead
+# (README.md has the one-liner) and pass its ARN like the destination secrets
+# above.
 # ---------------------------------------------------------------------------
 
 resource "random_password" "inbound_token" {
@@ -200,22 +208,23 @@ resource "aws_secretsmanager_secret_version" "inbound_token" {
 }
 
 # ---------------------------------------------------------------------------
-# Deployment model 1: ALB terminates TLS with the ACM certificate; the router
-# speaks plaintext behind it, in a private subnet. The ALB is internet-facing
-# (set alb_config.internal = true, and move lb_subnet_ids to private subnets,
-# for a VPC-only endpoint).
+# Deployment model 1 — ecs-fargate. A managed Fargate service behind an ALB
+# that terminates TLS with the ACM certificate; the router speaks plaintext
+# behind it, in a private subnet. The ALB is internet-facing (set
+# alb_config.internal = true, and move lb_subnet_ids to private subnets, for a
+# VPC-only endpoint). For teams already on ECS.
 # ---------------------------------------------------------------------------
 
-module "otel_router_private" {
+module "otel_router_ecs" {
   # Consuming from your own repo instead of this checkout? Pin to a release:
-  #   source = "github.com/edmerrett/otel-router//terraform/modules/private-alb?ref=<tag>"
-  source = "./modules/private-alb"
+  #   source = "github.com/edmerrett/otel-router//terraform/modules/ecs-fargate?ref=<tag>"
+  source = "./modules/ecs-fargate"
 
   # Distinct names are what let both models coexist in one account/region:
   # load balancer, target group, log group and IAM names would all collide on
   # the shared default "otel-router". Keeping only one module? The default is
   # fine — drop this line.
-  name = "otel-router-private"
+  name = "otel-router-ecs"
 
   vpc_id                   = module.vpc.vpc_id
   task_subnet_ids          = module.vpc.private_subnets
@@ -261,41 +270,42 @@ module "otel_router_private" {
 }
 
 # ---------------------------------------------------------------------------
-# Deployment model 2: public / DMZ. Internet-facing NLB passes TCP through;
-# the router terminates TLS itself with the PEM pair from Secrets Manager,
-# so telemetry stays encrypted end-to-end.
+# Deployment model 2 — ec2-docker. A single EC2 host runs the container via
+# Docker, directly internet-facing on its Elastic IP; the container terminates
+# TLS itself with the PEM pair from Secrets Manager, so telemetry stays
+# encrypted end to end. For teams not on ECS.
 # ---------------------------------------------------------------------------
 
-module "otel_router_public" {
+module "otel_router_ec2" {
   # Consuming from your own repo instead of this checkout? Pin to a release:
-  #   source = "github.com/edmerrett/otel-router//terraform/modules/public-nlb?ref=<tag>"
-  source = "./modules/public-nlb"
+  #   source = "github.com/edmerrett/otel-router//terraform/modules/ec2-docker?ref=<tag>"
+  source = "./modules/ec2-docker"
 
-  # See the note on the private module: distinct names keep the two models
-  # from colliding when deployed side by side.
-  name = "otel-router-public"
+  # See the note on the ecs module: distinct names keep the two models from
+  # colliding when deployed side by side.
+  name = "otel-router-ec2"
 
-  vpc_id                   = module.vpc.vpc_id
-  task_subnet_ids          = module.vpc.private_subnets # tasks stay private
-  lb_subnet_ids            = module.vpc.public_subnets  # internet-facing NLB
+  vpc_id = module.vpc.vpc_id
+  # A single instance lives in ONE subnet; a public one so its Elastic IP is
+  # internet-reachable and it can pull from ECR and reach destinations without
+  # a NAT gateway.
+  subnet_id                = element(module.vpc.public_subnets, 0)
   image                    = var.image
   inbound_token_secret_arn = aws_secretsmanager_secret.inbound_token.arn
   tls_cert_secret_arn      = var.tls_cert_secret_arn
   tls_key_secret_arn       = var.tls_key_secret_arn
   tags                     = local.tags
 
-  nlb_config = {
-    # "Anyone on the internet may reach the OTLP ports" must be an explicit
-    # choice, hence no default. The bearer token still gates the telemetry
-    # itself, but narrow this to your senders' egress CIDRs if you know them.
-    allowed_cidrs = ["0.0.0.0/0"]
-  }
+  # "Anyone on the internet may reach the OTLP ports" must be an explicit
+  # choice, hence the module's empty default and this required list. The bearer
+  # token still gates the telemetry itself, but narrow this to your senders'
+  # egress CIDRs if you know them.
+  allowed_cidrs = ["0.0.0.0/0"]
 
-  otel_router_config = {
-    # null => this module creates its own cluster; set var.existing_ecs_cluster_arn
-    # to deploy into a cluster you already run instead.
-    ecs_cluster_arn = var.existing_ecs_cluster_arn
-
+  router_config = {
+    # Every variable the baked-in destinations.yaml references must be set,
+    # or the collector refuses to start. Endpoints are plain env; credentials
+    # are fetched from Secrets Manager into tmpfs at container start.
     extra_environment_variables = {
       BACKEND_ENDPOINT = var.backend_endpoint
       WEBHOOK_ENDPOINT = var.webhook_endpoint
@@ -315,22 +325,27 @@ module "otel_router_public" {
 # Endpoints to hand to senders (Authorization: Bearer <inbound token>).
 # ---------------------------------------------------------------------------
 
-output "private_otlp_http_endpoint" {
+output "ecs_otlp_http_endpoint" {
   description = "OTLP/HTTP endpoint on the ALB."
-  value       = module.otel_router_private.otlp_http_endpoint
+  value       = module.otel_router_ecs.otlp_http_endpoint
 }
 
-output "private_otlp_grpc_endpoint" {
+output "ecs_otlp_grpc_endpoint" {
   description = "OTLP/gRPC endpoint on the ALB (null when gRPC is disabled)."
-  value       = module.otel_router_private.otlp_grpc_endpoint
+  value       = module.otel_router_ecs.otlp_grpc_endpoint
 }
 
-output "public_otlp_http_endpoint" {
-  description = "OTLP/HTTP endpoint on the public NLB. Production should CNAME a hostname matching the certificate SAN to the NLB DNS name."
-  value       = module.otel_router_public.otlp_http_endpoint
+output "ec2_otlp_http_endpoint" {
+  description = "OTLP/HTTP endpoint on the EC2 host. Production should point a DNS name matching the certificate SAN at the Elastic IP and hand senders that hostname."
+  value       = module.otel_router_ec2.otlp_http_endpoint
 }
 
-output "public_otlp_grpc_endpoint" {
-  description = "OTLP/gRPC endpoint on the public NLB (null when gRPC is disabled)."
-  value       = module.otel_router_public.otlp_grpc_endpoint
+output "ec2_otlp_grpc_endpoint" {
+  description = "OTLP/gRPC endpoint on the EC2 host (null when gRPC is disabled)."
+  value       = module.otel_router_ec2.otlp_grpc_endpoint
+}
+
+output "ec2_public_ip" {
+  description = "Elastic IP of the EC2 host. Point a DNS name matching the certificate SAN at it; senders dial that hostname, not the raw IP."
+  value       = module.otel_router_ec2.public_ip
 }
