@@ -250,6 +250,7 @@ config/destinations.yaml   your destinations: exporters + per-signal pipelines
 config/tls.yaml            TLS overlay merged in when TLS_ENABLED=true
 docker-compose.yml         demo harness (router + two example sinks + generators)
 test/                      end-to-end tests, sample sender, live Cowork test
+terraform/                 AWS deploy modules: ECS Fargate (ALB) + EC2 (Docker)
 docs/                      user guide, vendor setup, security notes
 ```
 

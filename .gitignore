@@ -7,3 +7,12 @@
 # Local editor / OS noise
 .DS_Store
 *.swp
+
+# Terraform working files. State can embed secret values (e.g. a generated
+# inbound token), so it must never reach version control; keep state remote.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
