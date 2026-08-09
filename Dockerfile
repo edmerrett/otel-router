@@ -9,7 +9,7 @@ FROM busybox:1.37-uclibc@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6
 # Contrib distribution: needed for bearertokenauth (inbound guard) and
 # health_check. Pinned by digest; tag: otel/opentelemetry-collector-contrib:0.156.0
 # Bump deliberately: refresh the digest and read the release notes first.
-FROM otel/opentelemetry-collector-contrib@sha256:125bdbeb7590cc1952c5b3430ecf14063568980c2c93d5b38676cc0446ed8108
+FROM otel/opentelemetry-collector-contrib@sha256:c5918f78992ee73b0d6f0e599423ac5ec52dd5d9726733114d6eca53d5a32ed5
 
 USER 0
 COPY --from=busybox --chmod=0755 /bin/busybox /bin/busybox
