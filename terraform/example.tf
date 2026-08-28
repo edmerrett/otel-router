@@ -71,7 +71,7 @@ variable "region" {
 }
 
 variable "image" {
-  description = "Registry URI of the otel-router image you built from the repo Dockerfile and pushed, e.g. \"123456789012.dkr.ecr.us-east-1.amazonaws.com/otel-router:0.156.0\"."
+  description = "Registry URI of the otel-router image you built from the repo Dockerfile and pushed, e.g. \"123456789012.dkr.ecr.us-east-1.amazonaws.com/otel-router:0.159.0\"."
   type        = string
 }
 

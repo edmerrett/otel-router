@@ -605,7 +605,7 @@ should receive, add the new variables to your `.env`, and rebuild.
 instead of `Authorization`, rename the key under that exporter's `headers:`
 block and rebuild.
 
-**Upgrade the Collector.** The image is pinned (e.g. `0.156.0`) on purpose.
+**Upgrade the Collector.** The image is pinned (e.g. `0.159.0`) on purpose.
 When you upgrade, bump the tag in the `Dockerfile`, read that release's notes,
 rebuild, and re-run `./test/test.sh` before deploying.
 

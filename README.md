@@ -8,7 +8,7 @@
 **One authenticated OTLP endpoint in. Any number of destinations out.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![OpenTelemetry Collector](https://img.shields.io/badge/OTel%20Collector-0.156.0%20pinned-425CC7?logo=opentelemetry&logoColor=white)](https://opentelemetry.io/docs/collector/)
+[![OpenTelemetry Collector](https://img.shields.io/badge/OTel%20Collector-0.159.0%20pinned-425CC7?logo=opentelemetry&logoColor=white)](https://opentelemetry.io/docs/collector/)
 [![OTLP](https://img.shields.io/badge/OTLP-gRPC%20%2B%20HTTP-F5A800)](#-how-it-works)
 
 [Quick start](#-quick-start) ·
