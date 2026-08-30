@@ -91,8 +91,8 @@ off the host at all (the Docker healthcheck probes it locally).
 aws ecr create-repository --repository-name otel-router
 aws ecr get-login-password | docker login --username AWS --password-stdin \
   <account-id>.dkr.ecr.<region>.amazonaws.com
-docker build -t <account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.156.0 .
-docker push <account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.156.0
+docker build -t <account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.159.0 .
+docker push <account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.159.0
 ```
 
 Building on an Apple Silicon or other ARM machine? Add `--platform linux/amd64`
@@ -187,7 +187,7 @@ module "otel_router" {
   vpc_id                   = "vpc-..."
   task_subnet_ids          = ["subnet-private-a", "subnet-private-b"]
   lb_subnet_ids            = ["subnet-public-a", "subnet-public-b"]
-  image                    = "<account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.156.0"
+  image                    = "<account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.159.0"
   inbound_token_secret_arn = "arn:aws:secretsmanager:..."
   certificate_arn          = "arn:aws:acm:..."
 
@@ -219,7 +219,7 @@ module "otel_router" {
 
   vpc_id                   = "vpc-..."
   subnet_id                = "subnet-public-a" # one public subnet
-  image                    = "<account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.156.0"
+  image                    = "<account-id>.dkr.ecr.<region>.amazonaws.com/otel-router:0.159.0"
   inbound_token_secret_arn = "arn:aws:secretsmanager:..."
   tls_cert_secret_arn      = "arn:aws:secretsmanager:..." # PEM cert (full chain)
   tls_key_secret_arn       = "arn:aws:secretsmanager:..." # PEM key
